@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Art Restorer - AI-Powered Art Restoration</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            width: 100%;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            color: white;
+            margin-bottom: 40px;
+            padding: 20px 0;
+        }
+
+        h1 {
+            font-size: 3rem;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .subtitle {
+            font-size: 1.2rem;
+            opacity: 0.9;
+        }
+
+        .main-content {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+
+        .upload-section {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .upload-area {
+            border: 3px dashed #667eea;
+            border-radius: 15px;
+            padding: 60px 40px;
+            background: #f8f9ff;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+            min-height: 300px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .upload-area.processing {
+            cursor: default;
+        }
+
+        .upload-area:hover {
+            background: #eff1ff;
+            border-color: #764ba2;
+        }
+
+        .upload-area.dragover {
+            background: #e6e8ff;
+            border-color: #764ba2;
+            transform: scale(1.02);
+        }
+
+        .upload-icon {
+            font-size: 4rem;
+            margin-bottom: 20px;
+        }
+
+        .upload-text {
+            font-size: 1.2rem;
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+
+        .upload-subtext {
+            color: #666;
+            font-size: 0.9rem;
+        }
+
+        .upload-content {
+            text-align: center;
+        }
+
+        .upload-content.hidden {
+            display: none;
+        }
+
+        #fileInput {
+            display: none;
+        }
+
+        .preview-container {
+            display: none;
+            text-align: center;
+        }
+
+        .preview-container.active {
+            display: block;
+        }
+
+        .preview-image {
+            max-width: 100%;
+            max-height: 250px;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            margin-bottom: 15px;
+        }
+
+        .preview-text {
+            font-size: 1.2rem;
+            color: #667eea;
+            margin-top: 15px;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 25px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: transform 0.2s ease;
+            margin-top: 20px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .results-section {
+            display: none;
+        }
+
+        .results-section.active {
+            display: block;
+        }
+
+        .results-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            padding: 20px;
+        }
+
+        .result-box {
+            text-align: center;
+        }
+
+        .result-box h3 {
+            color: #667eea;
+            margin-bottom: 12px;
+            font-size: 1.1rem;
+        }
+
+        .result-box img {
+            max-width: 100%;
+            max-height: 250px;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+
+        .new-upload-btn {
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        .images-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-top: 20px;
+        }
+
+        .image-box {
+            background: #f8f9ff;
+            border-radius: 15px;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .image-box h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 1.3rem;
+        }
+
+        .image-box img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .loading.active {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .spinner-container {
+            position: relative;
+            width: 120px;
+            height: 120px;
+            margin: 0 auto 30px;
+        }
+
+        .spinner {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+        }
+
+        .spinner-1 {
+            border: 4px solid transparent;
+            border-top: 4px solid #667eea;
+            animation: spin 1.5s linear infinite;
+        }
+
+        .spinner-2 {
+            border: 4px solid transparent;
+            border-right: 4px solid #764ba2;
+            animation: spin 2s linear infinite reverse;
+        }
+
+        .spinner-3 {
+            border: 4px solid transparent;
+            border-bottom: 4px solid #9f7aea;
+            animation: spin 2.5s linear infinite;
+        }
+
+        .loading-icon {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 3rem;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        .loading-text {
+            font-size: 1.2rem;
+            color: #667eea;
+            font-weight: 600;
+            margin-bottom: 15px;
+        }
+
+        .loading-subtext {
+            color: #666;
+            font-size: 0.95rem;
+        }
+
+        .progress-bar {
+            width: 100%;
+            max-width: 400px;
+            height: 6px;
+            background: #e0e0e0;
+            border-radius: 10px;
+            margin: 25px auto 0;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            border-radius: 10px;
+            animation: progress 5s ease-in-out forwards;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .progress-fill::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            right: 0;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+            animation: shimmer 1s infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+            50% { transform: translate(-50%, -50%) scale(1.1); opacity: 0.8; }
+        }
+
+        @keyframes progress {
+            0% { width: 0%; }
+            100% { width: 100%; }
+        }
+
+        @keyframes shimmer {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+
+        .message {
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            display: none;
+        }
+
+        .message.active {
+            display: block;
+        }
+
+        .message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 2rem;
+            }
+
+            .images-container {
+                grid-template-columns: 1fr;
+            }
+
+            .results-container {
+                grid-template-columns: 1fr;
+            }
+
+            .main-content {
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎨 Art Restorer</h1>
+            <p class="subtitle">Restore damaged artworks with AI-powered technology</p>
+        </header>
+
+        <div class="main-content">
+            <div class="upload-section">
+                <div class="upload-area" id="uploadArea">
+                    <div class="upload-content" id="uploadContent">
+                        <div class="upload-icon">📤</div>
+                        <div class="upload-text">Drop your image here or click to browse</div>
+                        <div class="upload-subtext">Supports JPG, PNG, WebP (Max 10MB)</div>
+                    </div>
+                    <div class="preview-container" id="previewContainer">
+                        <img id="previewImage" class="preview-image" alt="Preview">
+                        <div class="preview-text">Image selected</div>
+                        <div class="upload-subtext">Supports JPG, PNG, WebP (Max 10MB)</div>
+                    </div>
+                    <div class="loading" id="loading">
+                        <div class="spinner-container">
+                            <div class="spinner spinner-1"></div>
+                            <div class="spinner spinner-2"></div>
+                            <div class="spinner spinner-3"></div>
+                            <div class="loading-icon">🎨</div>
+                        </div>
+                        <div class="loading-text">AI is restoring your artwork</div>
+                        <div class="loading-subtext">Analyzing and enhancing details...</div>
+                        <div class="progress-bar">
+                            <div class="progress-fill"></div>
+                        </div>
+                    </div>
+                    <div class="results-section" id="results">
+                        <div class="results-container">
+                            <div class="result-box">
+                                <h3>Original Image</h3>
+                                <img id="originalImage" src="" alt="Original">
+                            </div>
+                            <div class="result-box">
+                                <h3>Restored Image</h3>
+                                <img id="restoredImage" src="" alt="Restored">
+                            </div>
+                        </div>
+                        <div class="new-upload-btn">
+                            <button class="btn" id="newUploadBtn">Restore Another Image</button>
+                        </div>
+                    </div>
+                </div>
+                <input type="file" id="fileInput" accept="image/*">
+                <button class="btn" id="uploadBtn" style="display: none;">Restore Image</button>
+            </div>
+
+            <div class="message" id="message"></div>
+        </div>
+    </div>
+
+    <script>
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const loading = document.getElementById('loading');
+        const results = document.getElementById('results');
+        const message = document.getElementById('message');
+        const originalImage = document.getElementById('originalImage');
+        const restoredImage = document.getElementById('restoredImage');
+        const previewContainer = document.getElementById('previewContainer');
+        const previewImage = document.getElementById('previewImage');
+        const uploadContent = document.getElementById('uploadContent');
+        const newUploadBtn = document.getElementById('newUploadBtn');
+
+        let selectedFile = null;
+
+        // Click to upload
+        uploadArea.addEventListener('click', () => {
+            fileInput.click();
+        });
+
+        // File selection
+        fileInput.addEventListener('change', (e) => {
+            handleFile(e.target.files[0]);
+        });
+
+        // Drag and drop
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            handleFile(e.dataTransfer.files[0]);
+        });
+
+        function handleFile(file) {
+            if (!file) return;
+
+            if (!file.type.startsWith('image/')) {
+                showMessage('Please select an image file', 'error');
+                return;
+            }
+
+            if (file.size > 10 * 1024 * 1024) {
+                showMessage('File size must be less than 10MB', 'error');
+                return;
+            }
+
+            selectedFile = file;
+            
+            // Show preview
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                previewImage.src = e.target.result;
+                uploadContent.classList.add('hidden');
+                previewContainer.classList.add('active');
+            };
+            reader.readAsDataURL(file);
+            
+            uploadBtn.style.display = 'inline-block';
+            results.classList.remove('active');
+            message.classList.remove('active');
+        }
+
+        uploadBtn.addEventListener('click', async () => {
+            if (!selectedFile) return;
+
+            const formData = new FormData();
+            formData.append('file', selectedFile);
+
+            // Hide preview and show loading in upload area
+            previewContainer.classList.remove('active');
+            loading.classList.add('active');
+            uploadArea.classList.add('processing');
+            uploadBtn.disabled = true;
+            uploadBtn.style.display = 'none';
+            results.classList.remove('active');
+            message.classList.remove('active');
+
+            // Start processing
+            const startTime = Date.now();
+            
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                // Calculate remaining time to reach 5 seconds
+                const elapsedTime = Date.now() - startTime;
+                const remainingTime = Math.max(0, 5000 - elapsedTime);
+
+                // Wait for remaining time to complete 5 seconds animation
+                await new Promise(resolve => setTimeout(resolve, remainingTime));
+
+                if (data.success) {
+                    originalImage.src = data.original_url;
+                    restoredImage.src = data.restored_url;
+                    loading.classList.remove('active');
+                    results.classList.add('active');
+                    showMessage(data.message, 'success');
+                } else {
+                    showMessage(data.message, 'error');
+                    loading.classList.remove('active');
+                    uploadBtn.disabled = false;
+                }
+            } catch (error) {
+                showMessage('An error occurred while processing your image', 'error');
+                loading.classList.remove('active');
+                uploadBtn.disabled = false;
+            }
+        });
+
+        newUploadBtn.addEventListener('click', () => {
+            // Reset everything
+            results.classList.remove('active');
+            uploadContent.classList.remove('hidden');
+            previewContainer.classList.remove('active');
+            uploadArea.classList.remove('processing');
+            uploadBtn.style.display = 'none';
+            uploadBtn.disabled = false;
+            selectedFile = null;
+            fileInput.value = '';
+            message.classList.remove('active');
+        });
+
+        function showMessage(text, type) {
+            message.textContent = text;
+            message.className = `message ${type} active`;
+            setTimeout(() => {
+                message.classList.remove('active');
+            }, 5000);
+        }
+    </script>
+</body>
+</html>

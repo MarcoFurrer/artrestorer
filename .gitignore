@@ -4,7 +4,8 @@ __pycache__/
 *.pyc
 .env
 .DS_Store
-
+restored/
+uploads/
 
 
 aicomp-477516-a9f4b6a5785d.json
