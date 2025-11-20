@@ -1,0 +1,10 @@
+.venv
+.idea
+__pycache__/
+*.pyc
+.env
+.DS_Store
+
+
+
+aicomp-477516-a9f4b6a5785d.json
