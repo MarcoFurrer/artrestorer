@@ -42,6 +42,7 @@ dependencies = [
     { name = "google-cloud-storage" },
     { name = "jinja2" },
     { name = "python-multipart" },
+    { name = "requests" },
     { name = "uvicorn" },
 ]
 
@@ -51,6 +52,7 @@ requires-dist = [
     { name = "google-cloud-storage", specifier = ">=3.6.0" },
     { name = "jinja2", specifier = ">=3.1.6" },
     { name = "python-multipart", specifier = ">=0.0.20" },
+    { name = "requests", specifier = ">=2.32.5" },
     { name = "uvicorn", specifier = ">=0.38.0" },
 ]
 
