@@ -7,6 +7,8 @@ from pathlib import Path
 import uuid
 import shutil
 import base64
+import httpx
+from io import BytesIO
 
 app = FastAPI(title="Art Restorer")
 
@@ -72,28 +74,56 @@ async def process_with_mask(filename: str = Form(...), mask_data: str = Form(...
         mask_path = UPLOAD_DIR / mask_filename
         
         # Decode base64 mask data
-        mask_data = mask_data.split(',')[1]  # Remove data:image/png;base64,
-        mask_bytes = base64.b64decode(mask_data)
+        mask_data_str = mask_data.split(',')[1]  # Remove data:image/png;base64,
+        mask_bytes = base64.b64decode(mask_data_str)
         
         # Save mask as PNG
         with open(mask_path, "wb") as f:
             f.write(mask_bytes)
         
-        # TODO: Call your AI restoration logic here with image and mask
-        # For now, we'll just copy the file to simulate restoration
+        # Read the uploaded image
         upload_path = UPLOAD_DIR / filename
-        restored_filename = f"{base_name}_restored{file_ext}"
-        restored_path = RESTORED_DIR / restored_filename
-        shutil.copy(upload_path, restored_path)
+        with open(upload_path, "rb") as f:
+            image_bytes = f.read()
         
-        return JSONResponse({
-            "success": True,
-            "original_url": f"/uploads/{filename}",
-            "mask_url": f"/uploads/{mask_filename}",
-            "restored_url": f"/restored/{restored_filename}",
-            "message": "Image processed successfully"
-        })
+        # Call the cloud inpainting API
+        api_url = "https://lama-restorer-api-210237704517.europe-west4.run.app/inpaint"
+        
+        # Prepare multipart form data
+        files = {
+            'image': (filename, BytesIO(image_bytes), 'image/jpeg'),
+            'mask': (mask_filename, BytesIO(mask_bytes), 'image/png')
+        }
+        
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            response = await client.post(api_url, files=files)
+        
+        if response.status_code == 200:
+            # Save the restored image
+            restored_filename = f"{base_name}_restored{file_ext}"
+            restored_path = RESTORED_DIR / restored_filename
+            
+            with open(restored_path, "wb") as f:
+                f.write(response.content)
+            
+            return JSONResponse({
+                "success": True,
+                "original_url": f"/uploads/{filename}",
+                "mask_url": f"/uploads/{mask_filename}",
+                "restored_url": f"/restored/{restored_filename}",
+                "message": "Image processed successfully"
+            })
+        else:
+            return JSONResponse({
+                "success": False,
+                "message": f"API error: {response.status_code} - {response.text}"
+            }, status_code=500)
     
+    except httpx.TimeoutException:
+        return JSONResponse({
+            "success": False,
+            "message": "Request timeout - the restoration is taking longer than expected"
+        }, status_code=504)
     except Exception as e:
         return JSONResponse({
             "success": False,
