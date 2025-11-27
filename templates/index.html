@@ -168,9 +168,113 @@
             display: block;
         }
 
+        .mask-editor-section {
+            display: none;
+            padding: 20px;
+        }
+
+        .mask-editor-section.active {
+            display: block;
+        }
+
+        .mask-editor-header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .mask-editor-header h2 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+
+        .mask-editor-header p {
+            color: #666;
+            font-size: 0.95rem;
+        }
+
+        .canvas-container {
+            position: relative;
+            display: inline-block;
+            margin: 0 auto;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .canvas-wrapper {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        #maskCanvas {
+            cursor: crosshair;
+            display: block;
+            max-width: 100%;
+            height: auto;
+        }
+
+        .mask-controls {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 20px;
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+            border: none;
+            padding: 10px 25px;
+            border-radius: 25px;
+            font-size: 0.95rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn-secondary:hover {
+            background: #5a6268;
+            transform: translateY(-2px);
+        }
+
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+            border: none;
+            padding: 10px 25px;
+            border-radius: 25px;
+            font-size: 0.95rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn-danger:hover {
+            background: #c82333;
+            transform: translateY(-2px);
+        }
+
+        .mask-info {
+            background: #f8f9ff;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .mask-info-title {
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 5px;
+        }
+
+        .mask-info-text {
+            color: #666;
+            font-size: 0.9rem;
+        }
+
         .results-container {
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: 1fr 1fr 1fr;
             gap: 20px;
             padding: 20px;
         }
@@ -377,6 +481,16 @@
                 grid-template-columns: 1fr;
             }
 
+            .mask-controls {
+                flex-direction: column;
+            }
+
+            .mask-controls .btn,
+            .mask-controls .btn-secondary,
+            .mask-controls .btn-danger {
+                width: 100%;
+            }
+
             .main-content {
                 padding: 20px;
             }
@@ -416,11 +530,35 @@
                             <div class="progress-fill"></div>
                         </div>
                     </div>
+                    <div class="mask-editor-section" id="maskEditor">
+                        <div class="mask-editor-header">
+                            <h2>Mark Damaged Areas</h2>
+                            <p>Draw on the image to mark the damaged areas that need restoration</p>
+                        </div>
+                        <div class="mask-info">
+                            <div class="mask-info-title">How to use:</div>
+                            <div class="mask-info-text">Click and drag to draw a lasso around damaged areas. Release to close the selection. The marked area will appear in red.</div>
+                        </div>
+                        <div class="canvas-wrapper">
+                            <div class="canvas-container">
+                                <canvas id="maskCanvas"></canvas>
+                            </div>
+                        </div>
+                        <div class="mask-controls">
+                            <button class="btn-secondary" id="undoBtn">↶ Undo Last</button>
+                            <button class="btn-danger" id="clearMaskBtn">✕ Clear All</button>
+                            <button class="btn" id="processMaskBtn">✓ Process Restoration</button>
+                        </div>
+                    </div>
                     <div class="results-section" id="results">
                         <div class="results-container">
                             <div class="result-box">
                                 <h3>Original Image</h3>
                                 <img id="originalImage" src="" alt="Original">
+                            </div>
+                            <div class="result-box">
+                                <h3>Mask</h3>
+                                <img id="maskImage" src="" alt="Mask">
                             </div>
                             <div class="result-box">
                                 <h3>Restored Image</h3>
@@ -433,7 +571,7 @@
                     </div>
                 </div>
                 <input type="file" id="fileInput" accept="image/*">
-                <button class="btn" id="uploadBtn" style="display: none;">Restore Image</button>
+                <button class="btn" id="uploadBtn" style="display: none;">Continue to Mask Selection</button>
             </div>
 
             <div class="message" id="message"></div>
@@ -446,18 +584,37 @@
         const uploadBtn = document.getElementById('uploadBtn');
         const loading = document.getElementById('loading');
         const results = document.getElementById('results');
+        const maskEditor = document.getElementById('maskEditor');
         const message = document.getElementById('message');
         const originalImage = document.getElementById('originalImage');
         const restoredImage = document.getElementById('restoredImage');
+        const maskImage = document.getElementById('maskImage');
         const previewContainer = document.getElementById('previewContainer');
         const previewImage = document.getElementById('previewImage');
         const uploadContent = document.getElementById('uploadContent');
         const newUploadBtn = document.getElementById('newUploadBtn');
+        const maskCanvas = document.getElementById('maskCanvas');
+        const ctx = maskCanvas.getContext('2d');
+        const undoBtn = document.getElementById('undoBtn');
+        const clearMaskBtn = document.getElementById('clearMaskBtn');
+        const processMaskBtn = document.getElementById('processMaskBtn');
 
         let selectedFile = null;
+        let uploadedFilename = null;
+        let uploadedBaseName = null;
+        let uploadedImageUrl = null;
+        let sourceImage = new Image();
+        let isDrawing = false;
+        let currentPath = [];
+        let allPaths = [];
+        let canvasScale = 1;
 
-        // Click to upload
-        uploadArea.addEventListener('click', () => {
+        // Click to upload (only when not in mask editor mode)
+        uploadArea.addEventListener('click', (e) => {
+            // Don't open file picker if mask editor is active
+            if (maskEditor.classList.contains('active') || results.classList.contains('active') || loading.classList.contains('active')) {
+                return;
+            }
             fileInput.click();
         });
 
@@ -517,20 +674,215 @@
             const formData = new FormData();
             formData.append('file', selectedFile);
 
-            // Hide preview and show loading in upload area
+            // Hide preview and show loading
             previewContainer.classList.remove('active');
-            loading.classList.add('active');
-            uploadArea.classList.add('processing');
             uploadBtn.disabled = true;
             uploadBtn.style.display = 'none';
-            results.classList.remove('active');
             message.classList.remove('active');
-
-            // Start processing
-            const startTime = Date.now();
             
             try {
                 const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    uploadedFilename = data.filename;
+                    uploadedBaseName = data.base_name;
+                    uploadedImageUrl = data.url;
+                    
+                    // Initialize mask editor
+                    initMaskEditor(data.url);
+                    showMessage('Image uploaded. Now mark the damaged areas.', 'success');
+                } else {
+                    showMessage(data.message, 'error');
+                    uploadBtn.disabled = false;
+                    uploadBtn.style.display = 'inline-block';
+                    previewContainer.classList.add('active');
+                }
+            } catch (error) {
+                showMessage('An error occurred while uploading your image', 'error');
+                uploadBtn.disabled = false;
+                uploadBtn.style.display = 'inline-block';
+                previewContainer.classList.add('active');
+            }
+        });
+
+        function initMaskEditor(imageUrl) {
+            sourceImage.onload = function() {
+                // Set canvas size to match image
+                const maxWidth = 800;
+                const maxHeight = 600;
+                let width = sourceImage.width;
+                let height = sourceImage.height;
+
+                // Scale down if too large
+                if (width > maxWidth) {
+                    height = (height * maxWidth) / width;
+                    width = maxWidth;
+                }
+                if (height > maxHeight) {
+                    width = (width * maxHeight) / height;
+                    height = maxHeight;
+                }
+
+                canvasScale = width / sourceImage.width;
+                maskCanvas.width = width;
+                maskCanvas.height = height;
+
+                // Draw image on canvas
+                ctx.drawImage(sourceImage, 0, 0, width, height);
+
+                // Show mask editor
+                uploadContent.classList.add('hidden');
+                maskEditor.classList.add('active');
+                allPaths = [];
+                currentPath = [];
+            };
+            sourceImage.src = imageUrl;
+        }
+
+        // Mouse event handlers for lasso drawing
+        maskCanvas.addEventListener('mousedown', (e) => {
+            e.stopPropagation();
+            isDrawing = true;
+            const rect = maskCanvas.getBoundingClientRect();
+            currentPath = [{
+                x: e.clientX - rect.left,
+                y: e.clientY - rect.top
+            }];
+        });
+
+        maskCanvas.addEventListener('mousemove', (e) => {
+            if (!isDrawing) return;
+
+            const rect = maskCanvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+
+            currentPath.push({ x, y });
+
+            // Redraw everything
+            redrawCanvas();
+
+            // Draw current path
+            ctx.strokeStyle = '#ff0000';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(currentPath[0].x, currentPath[0].y);
+            for (let i = 1; i < currentPath.length; i++) {
+                ctx.lineTo(currentPath[i].x, currentPath[i].y);
+            }
+            ctx.stroke();
+        });
+
+        maskCanvas.addEventListener('mouseup', () => {
+            if (isDrawing && currentPath.length > 2) {
+                allPaths.push([...currentPath]);
+                currentPath = [];
+                redrawCanvas();
+            }
+            isDrawing = false;
+        });
+
+        maskCanvas.addEventListener('mouseleave', () => {
+            if (isDrawing && currentPath.length > 2) {
+                allPaths.push([...currentPath]);
+                currentPath = [];
+                redrawCanvas();
+            }
+            isDrawing = false;
+        });
+
+        function redrawCanvas() {
+            // Clear and redraw image
+            ctx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+            ctx.drawImage(sourceImage, 0, 0, maskCanvas.width, maskCanvas.height);
+
+            // Draw all completed paths
+            allPaths.forEach(path => {
+                if (path.length < 2) return;
+
+                // Fill path with semi-transparent red
+                ctx.fillStyle = 'rgba(255, 0, 0, 0.3)';
+                ctx.beginPath();
+                ctx.moveTo(path[0].x, path[0].y);
+                for (let i = 1; i < path.length; i++) {
+                    ctx.lineTo(path[i].x, path[i].y);
+                }
+                ctx.closePath();
+                ctx.fill();
+
+                // Draw path outline
+                ctx.strokeStyle = '#ff0000';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            });
+        }
+
+        undoBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (allPaths.length > 0) {
+                allPaths.pop();
+                redrawCanvas();
+            }
+        });
+
+        clearMaskBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            allPaths = [];
+            currentPath = [];
+            redrawCanvas();
+        });
+
+        processMaskBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            if (allPaths.length === 0) {
+                showMessage('Please draw at least one mask area', 'error');
+                return;
+            }
+
+            // Create binary mask
+            const maskCanvasTemp = document.createElement('canvas');
+            maskCanvasTemp.width = sourceImage.width;
+            maskCanvasTemp.height = sourceImage.height;
+            const maskCtx = maskCanvasTemp.getContext('2d');
+
+            // Fill with black (undamaged areas)
+            maskCtx.fillStyle = '#000000';
+            maskCtx.fillRect(0, 0, maskCanvasTemp.width, maskCanvasTemp.height);
+
+            // Draw white regions (damaged areas) at original scale
+            maskCtx.fillStyle = '#ffffff';
+            allPaths.forEach(path => {
+                if (path.length < 2) return;
+                maskCtx.beginPath();
+                maskCtx.moveTo(path[0].x / canvasScale, path[0].y / canvasScale);
+                for (let i = 1; i < path.length; i++) {
+                    maskCtx.lineTo(path[i].x / canvasScale, path[i].y / canvasScale);
+                }
+                maskCtx.closePath();
+                maskCtx.fill();
+            });
+
+            // Convert to base64
+            const maskDataUrl = maskCanvasTemp.toDataURL('image/png');
+
+            // Send to server
+            maskEditor.classList.remove('active');
+            loading.classList.add('active');
+            uploadArea.classList.add('processing');
+
+            const startTime = Date.now();
+
+            try {
+                const formData = new FormData();
+                formData.append('filename', uploadedFilename);
+                formData.append('mask_data', maskDataUrl);
+
+                const response = await fetch('/process', {
                     method: 'POST',
                     body: formData
                 });
@@ -541,11 +893,12 @@
                 const elapsedTime = Date.now() - startTime;
                 const remainingTime = Math.max(0, 5000 - elapsedTime);
 
-                // Wait for remaining time to complete 5 seconds animation
+                // Wait for remaining time to complete animation
                 await new Promise(resolve => setTimeout(resolve, remainingTime));
 
                 if (data.success) {
                     originalImage.src = data.original_url;
+                    maskImage.src = data.mask_url;
                     restoredImage.src = data.restored_url;
                     loading.classList.remove('active');
                     results.classList.add('active');
@@ -553,24 +906,30 @@
                 } else {
                     showMessage(data.message, 'error');
                     loading.classList.remove('active');
-                    uploadBtn.disabled = false;
+                    maskEditor.classList.add('active');
                 }
             } catch (error) {
                 showMessage('An error occurred while processing your image', 'error');
                 loading.classList.remove('active');
-                uploadBtn.disabled = false;
+                maskEditor.classList.add('active');
             }
         });
 
         newUploadBtn.addEventListener('click', () => {
             // Reset everything
             results.classList.remove('active');
+            maskEditor.classList.remove('active');
             uploadContent.classList.remove('hidden');
             previewContainer.classList.remove('active');
             uploadArea.classList.remove('processing');
             uploadBtn.style.display = 'none';
             uploadBtn.disabled = false;
             selectedFile = null;
+            uploadedFilename = null;
+            uploadedBaseName = null;
+            uploadedImageUrl = null;
+            allPaths = [];
+            currentPath = [];
             fileInput.value = '';
             message.classList.remove('active');
         });
