@@ -15,7 +15,8 @@ PRETRAINED_CKPT = "/app/big-lama/models/best.ckpt"
 
 
 def run_gsutil(cmd):
-    full_cmd = f"gsutil -m {cmd}"
+    # -q für quiet (weniger Log-Spam beim Download), -m für Multithreading
+    full_cmd = f"gsutil -m -q {cmd}"
     print(f"Executing: {full_cmd}")
     subprocess.check_call(full_cmd, shell=True)
 
@@ -37,6 +38,7 @@ def prepare_data(bucket_name):
         try:
             target = os.path.join(LOCAL_TRAIN_DIR, folder)
             os.makedirs(target, exist_ok=True)
+            # cp -r kopiert den Inhalt
             run_gsutil(f"cp -r {src}/* {target}")
         except Exception as e:
             print(f"⚠️ Warnung bei {folder}: {e}")
@@ -54,9 +56,9 @@ def prepare_data(bucket_name):
 def create_yaml_config():
     """Konfiguriert Pfade"""
     config_content = f"""
-data_root_dir: {LOCAL_DATA_ROOT}
-out_root_dir: {LOCAL_MODEL_DIR}
-tb_dir: {LOCAL_MODEL_DIR}/tb_logs
+        data_root_dir: {LOCAL_DATA_ROOT}
+        out_root_dir: {LOCAL_MODEL_DIR}
+        tb_dir: {LOCAL_MODEL_DIR}/tb_logs
     """
     config_path = "/app/lama/configs/training/location/my_cloud_data.yaml"
     with open(config_path, "w") as f:
@@ -80,26 +82,28 @@ def main():
 
     # Argumente zusammenbauen
     cmd = [
-        sys.executable, "-u", "lama/bin/train.py",  # NEU: -u für unbuffered Output (Live Logs!)
+        sys.executable, "-u", "lama/bin/train.py",
         "-cn", "lama-fourier",
         f"location={location_config}",
-        f"trainer.max_epochs={args.epochs}",
         "data.batch_size=8",
 
-        # WICHTIG 1: Starten vom vortrainierten big-lama Modell
-        f"trainer.resume_from_checkpoint={PRETRAINED_CKPT}",
+        # --- FIX HIER: Das Pluszeichen (+) ist entscheidend! ---
 
-        # WICHTIG 2: Learning Rate senken für Fine-Tuning
-        "optimizers.generator.optimizer_params.lr=0.0001",
+        # Fügt max_epochs zur Config hinzu
+        f"+trainer.max_epochs={args.epochs}",
 
-        # NEU: Sorgt für regelmäßige Updates im Cloud Log (alle 50 Schritte)
-        # Verhindert, dass der Log "einschläft"
-        "trainer.log_every_n_steps=50"
+        # Fügt Checkpoint-Pfad hinzu
+        f"+trainer.resume_from_checkpoint={PRETRAINED_CKPT}",
+
+        # Fügt Log-Frequenz hinzu
+        "+trainer.log_every_n_steps=50",
+
+        # Learning Rate (Existiert meistens schon, aber + schadet hier nicht falls deep nested)
+        "optimizers.generator.optimizer_params.lr=0.0001"
     ]
 
     print(f"Startbefehl: {' '.join(cmd)}")
 
-    # Wir nutzen bufsize=1 und universal_newlines=True, damit Zeile für Zeile sofort kommt
     process = subprocess.Popen(
         cmd,
         env=env,
@@ -109,14 +113,15 @@ def main():
         bufsize=1
     )
 
-    # Dieser Loop streamt die Logs live von der GPU in deine Vertex AI Konsole
+    # Stream Output
     for line in process.stdout:
-        print(line, end='', flush=True)  # flush=True ist wichtig!
+        print(line, end='', flush=True)
 
     process.wait()
 
     print(f"--- 3. Upload Ergebnisse nach gs://{args.bucket}/final_model ---")
     try:
+        # Wir laden hoch, auch wenn Training failt (für Logs im tb_logs Ordner)
         run_gsutil(f"cp -r {LOCAL_MODEL_DIR}/* gs://{args.bucket}/final_model/")
     except Exception as e:
         print(f"Upload Fehler: {e}")
