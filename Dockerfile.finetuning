@@ -1,5 +1,5 @@
-# WICHTIG: Wir brauchen dieses Base-Image für die NVIDIA Treiber (CUDA 11.1)
-# Mit "python:3.8-slim" würde der Container die GPU Hardware nicht finden.
+# WICHTIG: Wir nutzen das PyTorch Image NUR wegen der vorinstallierten NVIDIA-Treiber (CUDA).
+# Ein "python:3.8-slim" würde auf Vertex AI die GPU nicht finden.
 FROM pytorch/pytorch:1.8.0-cuda11.1-cudnn8-runtime
 
 # 1. System-Updates & Google Cloud SDK (für gsutil Speed)
@@ -15,12 +15,14 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# 2. ALLE Python Dependencies in einem Rutsch (Ohne requirements.txt)
-# Wir erzwingen Torch GPU (+cu111) und installieren den Rest direkt dazu.
+# 2. Deine Installation (angepasst für GPU & NetworkX Fix)
+# Wir installieren Torch explizit mit CUDA (+cu111), damit es sicher die GPU nutzt.
+# Wir pinnen networkx<3.0, da neuere Versionen Python 3.9 brauchen.
 RUN pip install --no-cache-dir \
     torch==1.8.0+cu111 \
     torchvision==0.9.0+cu111 \
     -f https://download.pytorch.org/whl/torch_stable.html \
+    "networkx<3.0" \
     pytorch-lightning==1.2.9 \
     hydra-core==1.1.0 \
     scikit-image \
@@ -37,7 +39,7 @@ RUN pip install --no-cache-dir \
     scikit-learn \
     google-cloud-storage
 
-# 3. Nur noch den Code kopieren
+# 3. Code kopieren (requirements.txt Logik komplett entfernt, wie gewünscht)
 COPY . /app
 
 # Umgebungsvariable
