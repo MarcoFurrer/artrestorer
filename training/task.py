@@ -82,6 +82,8 @@ def main():
 
     env = os.environ.copy()
     env['PYTHONPATH'] = os.getcwd() + "/lama"
+    # FIX: Hydra benötigt zwingend einen USERnamen für Logs
+    env['USER'] = "root"
 
     cmd = [
         sys.executable, "-u", "lama/bin/train.py",
@@ -100,7 +102,10 @@ def main():
         "+trainer.log_every_n_steps=50",
 
         # Learning Rate (Feinjustierung)
-        "+optimizers.generator.optimizer_params.lr=0.0001"
+        "+optimizers.generator.optimizer_params.lr=0.0001",
+
+        # FIX: Explizites Setzen des Hydra Run Dirs, um Konflikte zu vermeiden
+        "hydra.run.dir=/tmp/experiments/hydra_logs"
     ]
 
     print(f"Startbefehl: {' '.join(cmd)}")
