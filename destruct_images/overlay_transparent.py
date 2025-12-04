@@ -142,27 +142,30 @@ def apply_papercut(base_img, overlay_path, num_copies=5):
 def main(base_image_path, output_path, mask_output_path, save_type="PNG"):
     # Load base image
     if not os.path.exists(base_image_path):
-        print(f"Error: Base image not found: {base_image_path}")
-        exit(1)
+        return NameError(f"⚠ Base image not found: {base_image_path}")
 
-    base_img = Image.open(base_image_path).convert("RGBA")
-    print(f"✓ Loaded base image: {base_img.size}")
+    try:
+        base_img = Image.open(base_image_path).convert("RGBA")
+        print(f"✓ Loaded base image: {base_img.size}")
 
-    choice = random.randint(1, 3)
-    print(f"✓ Randomly selected overlay type: {choice}")
-    # Apply overlays using functions
-    if choice == 1:
-        base_img, mask = apply_crack(base_img, "destruct_images/overlays/transparent/cracks.png")
-    elif choice == 2:
-        base_img, mask = apply_fire(base_img, "destruct_images/overlays/transparent/fire.png", scale_factor=0.25)
-    else:
-        base_img, mask = apply_papercut(base_img, "destruct_images/overlays/transparent/papercut.png", num_copies=3)
+        choice = random.randint(1, 3)
+        print(f"✓ Randomly selected overlay type: {choice}")
+        # Apply overlays using functions
+        if choice == 1:
+            base_img, mask = apply_crack(base_img, "destruct_images/overlays/transparent/cracks.png")
+        elif choice == 2:
+            base_img, mask = apply_fire(base_img, "destruct_images/overlays/transparent/fire.png", scale_factor=0.25)
+        else:
+            base_img, mask = apply_papercut(base_img, "destruct_images/overlays/transparent/papercut.png", num_copies=3)
 
-    # Save result
-    base_img.save(output_path, "PNG")
-    mask.save(mask_output_path, "PNG")
-    print(f"✓ Saved result: {output_path}")
-    print(f"✓ Saved mask: {mask_output_path}")
+        # Save result
+        base_img.save(output_path, "PNG")
+        mask.save(mask_output_path, "PNG")
+        print(f"✓ Saved result: {output_path}")
+        print(f"✓ Saved mask: {mask_output_path}")
+    except Exception as e:
+        print(f"⚠ Error processing image: {e}")
+        pass
 
 
 if __name__ == "__main__":

@@ -1,11 +1,28 @@
 from overlay_transparent import main
 import os
+from multiprocessing import Pool, cpu_count
 
-if __name__ == "__main__":
-    for file in os.listdir("train_1"):
+def process_file(file):
+    """Process single file"""
+    try:
         main(
             os.path.join("train_1", file),
             os.path.join("train_1_destructed", file),
             os.path.join("train_1_mask", file),
             save_type="JPEG",
         )
+        print(f"✓ {file}")
+    except Exception as e:
+        print(f"✗ {file}: {e}")
+
+if __name__ == "__main__":
+    files = [f for f in os.listdir("train_1")]
+    
+    # Use all available CPU cores
+    num_workers = cpu_count()
+    print(f"Processing {len(files)} files with {num_workers} workers...")
+    
+    with Pool(num_workers) as pool:
+        pool.map(process_file, files)
+    
+    print("Done!")
