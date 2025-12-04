@@ -10,15 +10,24 @@ REGION = "europe-west4"
 BUCKET_NAME = "artrestorer"
 JOB_NAME = "lama-wikiart-finetune-v1"
 
-# Docker Image
+# Docker Image Name (wir geben ihm einen suffix -gpu zur Unterscheidung)
 REPO_NAME = "vertex-ai-repo"
-IMAGE_TAG = "lama-restorer:latest"
+IMAGE_TAG = "lama-restorer-gpu:latest"
 DOCKER_IMAGE_URI = f"{REGION}-docker.pkg.dev/{PROJECT_ID}/{REPO_NAME}/{IMAGE_TAG}"
 
 
 def build_and_push():
-    print("--- Baue und pushe Docker Image ---")
-    subprocess.check_call(["docker", "build", "--platform", "linux/amd64", "-t", DOCKER_IMAGE_URI, "."])
+    print("--- Baue und pushe Docker Image (GPU Version) ---")
+
+    # HIER IST DIE ÄNDERUNG: -f Dockerfile.finetuning
+    subprocess.check_call([
+        "docker", "build",
+        "-f", "Dockerfile.finetuning",  # <--- Nimmt das spezielle File
+        "--platform", "linux/amd64",
+        "-t", DOCKER_IMAGE_URI,
+        "."
+    ])
+
     subprocess.check_call(["docker", "push", DOCKER_IMAGE_URI])
 
 
@@ -39,7 +48,7 @@ def submit_custom_job():
     job.run(
         args=[
             f"--bucket={BUCKET_NAME}",
-            "--epochs=20"  # 20 Epochen für den Anfang (ca. 1 Tag Laufzeit bei 60GB)
+            "--epochs=20"
         ],
         replica_count=1,
         machine_type="n1-standard-8",
