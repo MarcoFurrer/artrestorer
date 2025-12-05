@@ -9,7 +9,7 @@ import shutil
 LOCAL_DATA_ROOT = "/tmp/dataset"
 LOCAL_TRAIN_DIR = os.path.join(LOCAL_DATA_ROOT, "train")
 LOCAL_VAL_DIR = os.path.join(LOCAL_DATA_ROOT, "visual_test")
-LOCAL_REAL_VAL_DIR = os.path.join(LOCAL_DATA_ROOT, "val")  # NEU: Der echte Validierungsordner
+LOCAL_REAL_VAL_DIR = os.path.join(LOCAL_DATA_ROOT, "val")
 LOCAL_MODEL_DIR = "/tmp/experiments"
 PRETRAINED_CKPT = "/app/big-lama/models/best.ckpt"
 
@@ -35,40 +35,57 @@ def download_perceptual_loss():
     print("✅ Download abgeschlossen.")
 
 
-def prepare_data(bucket_name):
-    print("--- 1. Daten Download (Selektiv & Flach) ---")
+def prepare_data(bucket_name, debug_mode=True):
+    print(f"--- 1. Daten Download (High Speed) [Debug={debug_mode}] ---")
     start = time.time()
 
     os.makedirs(LOCAL_TRAIN_DIR, exist_ok=True)
-    os.makedirs(LOCAL_VAL_DIR, exist_ok=True)
-    os.makedirs(LOCAL_REAL_VAL_DIR, exist_ok=True)  # NEU
+    # Wir erstellen VAL Ordner nicht mit mkdir, da wir ihn gleich symlinken wollen
 
-    # 1. Training Data (train_2 bis train_9)
-    folders_to_train = [f"train_{i}" for i in range(2, 10)]
+    # TRAINING DATA
+    if debug_mode:
+        print("⚡ DEBUG MODUS: Lade NUR train_2...")
+        folders_to_train = ["train_2"]
+    else:
+        folders_to_train = [f"train_{i}" for i in range(2, 10)]
+
+    print(f"Lade Ordner: {folders_to_train}")
 
     for folder in folders_to_train:
         src = f"gs://{bucket_name}/train/{folder}"
         try:
             target = os.path.join(LOCAL_TRAIN_DIR, folder)
             os.makedirs(target, exist_ok=True)
-            run_cmd(f"gsutil -m -q cp -r {src}/* {target}")
+            run_cmd(f"gcloud storage cp -r {src}/* {target}")
         except Exception as e:
             print(f"⚠️ Warnung bei {folder}: {e}")
 
-    # 2. Test & Validierungs Data
-    # Wir nutzen die Test-Daten auch für die Validierung (val), damit der Ordner nicht leer ist.
-    print(f"Lade Test/Val-Daten...")
+    # TEST DATA
+    print(f"Lade Test-Daten nach {LOCAL_VAL_DIR}...")
+    os.makedirs(LOCAL_VAL_DIR, exist_ok=True)
     try:
-        # Versuch 1: Verschachtelt
-        run_cmd(f"gsutil -m -q cp -r gs://{bucket_name}/test/test/* {LOCAL_VAL_DIR}")
-        run_cmd(f"gsutil -m -q cp -r gs://{bucket_name}/test/test/* {LOCAL_REAL_VAL_DIR}")  # NEU
+        if debug_mode: pass
+        run_cmd(f"gcloud storage cp -r gs://{bucket_name}/test/test/* {LOCAL_VAL_DIR}")
     except Exception:
-        # Fallback
-        run_cmd(f"gsutil -m -q cp -r gs://{bucket_name}/test/* {LOCAL_VAL_DIR}")
-        run_cmd(f"gsutil -m -q cp -r gs://{bucket_name}/test/* {LOCAL_REAL_VAL_DIR}")  # NEU
+        try:
+            run_cmd(f"gcloud storage cp -r gs://{bucket_name}/test/* {LOCAL_VAL_DIR}")
+        except Exception as e:
+            print(f"⚠️ Test-Daten Fehler: {e}")
+
+    # VAL DATA (Optimierung: Symlink statt Kopie!)
+    # Spart Speicherplatz und Zeit
+    if os.path.exists(LOCAL_REAL_VAL_DIR):
+        # Falls Ordner existiert (z.B. durch vorherigen Run), löschen
+        if os.path.islink(LOCAL_REAL_VAL_DIR):
+            os.unlink(LOCAL_REAL_VAL_DIR)
+        else:
+            shutil.rmtree(LOCAL_REAL_VAL_DIR)
+
+    print(f"Erstelle Symlink für Validierung: {LOCAL_REAL_VAL_DIR} -> {LOCAL_VAL_DIR}")
+    os.symlink(LOCAL_VAL_DIR, LOCAL_REAL_VAL_DIR)
 
     duration = (time.time() - start) / 60
-    print(f"✅ Daten Download fertig in {duration:.2f} Minuten.")
+    print(f"✅ Daten fertig in {duration:.2f} Minuten.")
 
 
 def create_yaml_config():
@@ -87,10 +104,10 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--bucket', type=str, required=True)
     parser.add_argument('--epochs', type=int, default=10)
+    parser.add_argument('--debug', action='store_true')
     args = parser.parse_args()
 
-    # 1. Downloads
-    prepare_data(args.bucket)
+    prepare_data(args.bucket, debug_mode=args.debug)
     download_perceptual_loss()
 
     location_config = create_yaml_config()
@@ -110,12 +127,8 @@ def main():
         f"+trainer.max_epochs={args.epochs}",
         f"+trainer.resume_from_checkpoint={PRETRAINED_CKPT}",
         "+trainer.log_every_n_steps=50",
-
         "optimizers.generator.lr=0.0001",
         "hydra.run.dir=/tmp/experiments/hydra_logs",
-
-        # FIX: Suffix auf .jpg setzen, damit er deine Bilder findet!
-        # Standard ist oft .png, was bei deinen .jpg Dateien zu "0 files found" führt.
         "data.train.img_suffix=.jpg",
         "data.val.img_suffix=.jpg",
         "data.visual_test.img_suffix=.jpg"
@@ -139,7 +152,7 @@ def main():
 
     print(f"--- 3. Upload Ergebnisse nach gs://{args.bucket}/final_model ---")
     try:
-        run_cmd(f"gsutil -m -q cp -r {LOCAL_MODEL_DIR}/* gs://{args.bucket}/final_model/")
+        run_cmd(f"gcloud storage cp -r {LOCAL_MODEL_DIR}/* gs://{args.bucket}/final_model/")
     except Exception as e:
         print(f"Upload Fehler: {e}")
 

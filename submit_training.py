@@ -5,12 +5,10 @@ import subprocess
 # --- KONFIGURATION ---
 PROJECT_ID = "aicomp-477516"
 REGION = "europe-west4"
-
-# ⚠️ ANGEPASST AUF DEIN BILD
 BUCKET_NAME = "artrestorer"
 JOB_NAME = "lama-wikiart-finetune-v1"
 
-# Docker Image Name (wir geben ihm einen suffix -gpu zur Unterscheidung)
+# Docker Image
 REPO_NAME = "vertex-ai-repo"
 IMAGE_TAG = "lama-restorer-gpu:latest"
 DOCKER_IMAGE_URI = f"{REGION}-docker.pkg.dev/{PROJECT_ID}/{REPO_NAME}/{IMAGE_TAG}"
@@ -18,16 +16,14 @@ DOCKER_IMAGE_URI = f"{REGION}-docker.pkg.dev/{PROJECT_ID}/{REPO_NAME}/{IMAGE_TAG
 
 def build_and_push():
     print("--- Baue und pushe Docker Image (GPU Version) ---")
-
-    # HIER IST DIE ÄNDERUNG: -f Dockerfile.finetuning
+    # -f Dockerfile.finetuning nutzen!
     subprocess.check_call([
         "docker", "build",
-        "-f", "Dockerfile.finetuning",  # <--- Nimmt das spezielle File
+        "-f", "Dockerfile.finetuning",
         "--platform", "linux/amd64",
         "-t", DOCKER_IMAGE_URI,
         "."
     ])
-
     subprocess.check_call(["docker", "push", DOCKER_IMAGE_URI])
 
 
@@ -54,6 +50,8 @@ def submit_custom_job():
         machine_type="n1-standard-8",
         accelerator_type="NVIDIA_TESLA_T4",
         accelerator_count=1,
+        # NEU: 300GB Festplatte, damit uns der Platz nicht ausgeht!
+        boot_disk_size_gb=300,
         sync=True
     )
 
