@@ -31,7 +31,6 @@ def download_perceptual_loss():
     print("⚠️ Loss-Modell fehlt. Lade herunter...")
     os.makedirs(target_dir, exist_ok=True)
     url = "http://sceneparsing.csail.mit.edu/model/pytorch/ade20k-resnet50dilated-ppm_deepsup/encoder_epoch_20.pth"
-    # curl ist leise genug, wenn man -s (silent) nutzen würde, aber hier ok
     run_cmd(f"curl -L -o {target_file} {url}")
     print("✅ Download abgeschlossen.")
 
@@ -56,8 +55,8 @@ def prepare_data(bucket_name, debug_mode=False):
         try:
             target = os.path.join(LOCAL_TRAIN_DIR, folder)
             os.makedirs(target, exist_ok=True)
-            # NEU: --verbosity=error unterdrückt die tausenden "Copying..." Zeilen
-            run_cmd(f"gcloud storage cp --verbosity=error -r {src}/* {target}")
+            # FIX: --verbosity=error muss DIREKT nach gcloud stehen!
+            run_cmd(f"gcloud --verbosity=error storage cp -r {src}/* {target}")
         except Exception as e:
             print(f"⚠️ Warnung bei {folder}: {e}")
 
@@ -65,10 +64,10 @@ def prepare_data(bucket_name, debug_mode=False):
     print(f"Lade Test-Daten nach {LOCAL_VAL_DIR}...")
     os.makedirs(LOCAL_VAL_DIR, exist_ok=True)
     try:
-        run_cmd(f"gcloud storage cp --verbosity=error -r gs://{bucket_name}/test/test/* {LOCAL_VAL_DIR}")
+        run_cmd(f"gcloud --verbosity=error storage cp -r gs://{bucket_name}/test/test/* {LOCAL_VAL_DIR}")
     except Exception:
         try:
-            run_cmd(f"gcloud storage cp --verbosity=error -r gs://{bucket_name}/test/* {LOCAL_VAL_DIR}")
+            run_cmd(f"gcloud --verbosity=error storage cp -r gs://{bucket_name}/test/* {LOCAL_VAL_DIR}")
         except Exception as e:
             print(f"⚠️ Test-Daten Fehler: {e}")
 
@@ -150,7 +149,7 @@ def main():
 
     print(f"--- 3. Upload Ergebnisse nach gs://{args.bucket}/final_model ---")
     try:
-        run_cmd(f"gcloud storage cp --verbosity=error -r {LOCAL_MODEL_DIR}/* gs://{args.bucket}/final_model/")
+        run_cmd(f"gcloud --verbosity=error storage cp -r {LOCAL_MODEL_DIR}/* gs://{args.bucket}/final_model/")
     except Exception as e:
         print(f"Upload Fehler: {e}")
 
