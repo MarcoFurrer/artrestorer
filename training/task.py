@@ -31,16 +31,16 @@ def download_perceptual_loss():
     print("⚠️ Loss-Modell fehlt. Lade herunter...")
     os.makedirs(target_dir, exist_ok=True)
     url = "http://sceneparsing.csail.mit.edu/model/pytorch/ade20k-resnet50dilated-ppm_deepsup/encoder_epoch_20.pth"
+    # curl ist leise genug, wenn man -s (silent) nutzen würde, aber hier ok
     run_cmd(f"curl -L -o {target_file} {url}")
     print("✅ Download abgeschlossen.")
 
 
-def prepare_data(bucket_name, debug_mode=True):
-    print(f"--- 1. Daten Download (High Speed) [Debug={debug_mode}] ---")
+def prepare_data(bucket_name, debug_mode=False):
+    print(f"--- 1. Daten Download (Silent Mode) [Debug={debug_mode}] ---")
     start = time.time()
 
     os.makedirs(LOCAL_TRAIN_DIR, exist_ok=True)
-    # Wir erstellen VAL Ordner nicht mit mkdir, da wir ihn gleich symlinken wollen
 
     # TRAINING DATA
     if debug_mode:
@@ -56,26 +56,24 @@ def prepare_data(bucket_name, debug_mode=True):
         try:
             target = os.path.join(LOCAL_TRAIN_DIR, folder)
             os.makedirs(target, exist_ok=True)
-            run_cmd(f"gcloud storage cp -r {src}/* {target}")
+            # NEU: --verbosity=error unterdrückt die tausenden "Copying..." Zeilen
+            run_cmd(f"gcloud storage cp --verbosity=error -r {src}/* {target}")
         except Exception as e:
             print(f"⚠️ Warnung bei {folder}: {e}")
 
-    # TEST DATA
+    # TEST & VAL DATA
     print(f"Lade Test-Daten nach {LOCAL_VAL_DIR}...")
     os.makedirs(LOCAL_VAL_DIR, exist_ok=True)
     try:
-        if debug_mode: pass
-        run_cmd(f"gcloud storage cp -r gs://{bucket_name}/test/test/* {LOCAL_VAL_DIR}")
+        run_cmd(f"gcloud storage cp --verbosity=error -r gs://{bucket_name}/test/test/* {LOCAL_VAL_DIR}")
     except Exception:
         try:
-            run_cmd(f"gcloud storage cp -r gs://{bucket_name}/test/* {LOCAL_VAL_DIR}")
+            run_cmd(f"gcloud storage cp --verbosity=error -r gs://{bucket_name}/test/* {LOCAL_VAL_DIR}")
         except Exception as e:
             print(f"⚠️ Test-Daten Fehler: {e}")
 
-    # VAL DATA (Optimierung: Symlink statt Kopie!)
-    # Spart Speicherplatz und Zeit
+    # VAL DATA (Symlink)
     if os.path.exists(LOCAL_REAL_VAL_DIR):
-        # Falls Ordner existiert (z.B. durch vorherigen Run), löschen
         if os.path.islink(LOCAL_REAL_VAL_DIR):
             os.unlink(LOCAL_REAL_VAL_DIR)
         else:
@@ -129,9 +127,9 @@ def main():
         "+trainer.log_every_n_steps=50",
         "optimizers.generator.lr=0.0001",
         "hydra.run.dir=/tmp/experiments/hydra_logs",
-        "data.train.img_suffix=.jpg",
-        "data.val.img_suffix=.jpg",
-        "data.visual_test.img_suffix=.jpg"
+        "+data.train.img_suffix=.jpg",
+        "+data.val.img_suffix=.jpg",
+        "+data.visual_test.img_suffix=.jpg"
     ]
 
     print(f"Startbefehl: {' '.join(cmd)}")
@@ -152,7 +150,7 @@ def main():
 
     print(f"--- 3. Upload Ergebnisse nach gs://{args.bucket}/final_model ---")
     try:
-        run_cmd(f"gcloud storage cp -r {LOCAL_MODEL_DIR}/* gs://{args.bucket}/final_model/")
+        run_cmd(f"gcloud storage cp --verbosity=error -r {LOCAL_MODEL_DIR}/* gs://{args.bucket}/final_model/")
     except Exception as e:
         print(f"Upload Fehler: {e}")
 
