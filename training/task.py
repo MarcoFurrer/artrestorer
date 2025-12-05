@@ -9,6 +9,7 @@ import shutil
 LOCAL_DATA_ROOT = "/tmp/dataset"
 LOCAL_TRAIN_DIR = os.path.join(LOCAL_DATA_ROOT, "train")
 LOCAL_VAL_DIR = os.path.join(LOCAL_DATA_ROOT, "visual_test")
+LOCAL_REAL_VAL_DIR = os.path.join(LOCAL_DATA_ROOT, "val")  # NEU: Der echte Validierungsordner
 LOCAL_MODEL_DIR = "/tmp/experiments"
 PRETRAINED_CKPT = "/app/big-lama/models/best.ckpt"
 
@@ -19,9 +20,7 @@ def run_cmd(cmd):
 
 
 def download_perceptual_loss():
-    """Lädt das fehlende ResNet-Modell für die Loss-Berechnung"""
     print("--- Check: Perceptual Loss Model ---")
-    # Zielpfad relativ zu TORCH_HOME (was wir auf . setzen)
     target_dir = "ade20k/ade20k-resnet50dilated-ppm_deepsup"
     target_file = os.path.join(target_dir, "encoder_epoch_20.pth")
 
@@ -32,7 +31,6 @@ def download_perceptual_loss():
     print("⚠️ Loss-Modell fehlt. Lade herunter...")
     os.makedirs(target_dir, exist_ok=True)
     url = "http://sceneparsing.csail.mit.edu/model/pytorch/ade20k-resnet50dilated-ppm_deepsup/encoder_epoch_20.pth"
-    # Download mit curl
     run_cmd(f"curl -L -o {target_file} {url}")
     print("✅ Download abgeschlossen.")
 
@@ -43,6 +41,7 @@ def prepare_data(bucket_name):
 
     os.makedirs(LOCAL_TRAIN_DIR, exist_ok=True)
     os.makedirs(LOCAL_VAL_DIR, exist_ok=True)
+    os.makedirs(LOCAL_REAL_VAL_DIR, exist_ok=True)  # NEU
 
     # 1. Training Data (train_2 bis train_9)
     folders_to_train = [f"train_{i}" for i in range(2, 10)]
@@ -52,17 +51,21 @@ def prepare_data(bucket_name):
         try:
             target = os.path.join(LOCAL_TRAIN_DIR, folder)
             os.makedirs(target, exist_ok=True)
-            # -m für Multithreading, -q für Ruhe
             run_cmd(f"gsutil -m -q cp -r {src}/* {target}")
         except Exception as e:
             print(f"⚠️ Warnung bei {folder}: {e}")
 
-    # 2. Test Data
-    print(f"Lade Test-Daten...")
+    # 2. Test & Validierungs Data
+    # Wir nutzen die Test-Daten auch für die Validierung (val), damit der Ordner nicht leer ist.
+    print(f"Lade Test/Val-Daten...")
     try:
+        # Versuch 1: Verschachtelt
         run_cmd(f"gsutil -m -q cp -r gs://{bucket_name}/test/test/* {LOCAL_VAL_DIR}")
+        run_cmd(f"gsutil -m -q cp -r gs://{bucket_name}/test/test/* {LOCAL_REAL_VAL_DIR}")  # NEU
     except Exception:
+        # Fallback
         run_cmd(f"gsutil -m -q cp -r gs://{bucket_name}/test/* {LOCAL_VAL_DIR}")
+        run_cmd(f"gsutil -m -q cp -r gs://{bucket_name}/test/* {LOCAL_REAL_VAL_DIR}")  # NEU
 
     duration = (time.time() - start) / 60
     print(f"✅ Daten Download fertig in {duration:.2f} Minuten.")
@@ -88,7 +91,7 @@ def main():
 
     # 1. Downloads
     prepare_data(args.bucket)
-    download_perceptual_loss()  # NEU: Verhindert den nächsten Crash
+    download_perceptual_loss()
 
     location_config = create_yaml_config()
 
@@ -97,8 +100,6 @@ def main():
     env = os.environ.copy()
     env['PYTHONPATH'] = os.getcwd() + "/lama"
     env['USER'] = "root"
-    # FIX: Setze TORCH_HOME auf das aktuelle Verzeichnis (/app),
-    # damit er den Ordner 'ade20k' findet, den wir oben erstellt haben.
     env['TORCH_HOME'] = os.getcwd()
 
     cmd = [
@@ -109,8 +110,15 @@ def main():
         f"+trainer.max_epochs={args.epochs}",
         f"+trainer.resume_from_checkpoint={PRETRAINED_CKPT}",
         "+trainer.log_every_n_steps=50",
-        "+optimizers.generator.optimizer_params.lr=0.0001",
-        "hydra.run.dir=/tmp/experiments/hydra_logs"
+
+        "optimizers.generator.lr=0.0001",
+        "hydra.run.dir=/tmp/experiments/hydra_logs",
+
+        # FIX: Suffix auf .jpg setzen, damit er deine Bilder findet!
+        # Standard ist oft .png, was bei deinen .jpg Dateien zu "0 files found" führt.
+        "data.train.img_suffix=.jpg",
+        "data.val.img_suffix=.jpg",
+        "data.visual_test.img_suffix=.jpg"
     ]
 
     print(f"Startbefehl: {' '.join(cmd)}")
