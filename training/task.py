@@ -16,6 +16,9 @@ LOCAL_REAL_VAL_DIR = os.path.join(LOCAL_DATA_ROOT, "val")
 LOCAL_MODEL_DIR = "/tmp/experiments"
 PRETRAINED_CKPT = "/app/big-lama/models/best.ckpt"
 
+# NEU: Eigener Output-Ordner für Phase 2
+OUTPUT_FOLDER_NAME = "final_model_custom"
+
 
 def run_cmd(cmd):
     """Führt Befehl laut aus"""
@@ -64,39 +67,37 @@ def flatten_directory(directory):
 
 def process_and_merge_masks(val_dir, mask_source_dir):
     """
-    Nimmt Masken aus mask_source_dir (z.B. 1.jpg), konvertiert sie zu PNG
-    und speichert sie als 1_mask.png in val_dir.
+    Nimmt Masken, konvertiert sie zu PNG und speichert sie als _mask.png.
+    Wir nutzen PNG, da dies der Standard-Suffix von LaMa ist.
     """
     print(f"⚙️ Verarbeite Masken von {mask_source_dir} nach {val_dir}...")
 
     mask_files = os.listdir(mask_source_dir)
+    total = len(mask_files)
     count = 0
 
-    for f in mask_files:
-        # Pfade
+    for i, f in enumerate(mask_files):
         src_path = os.path.join(mask_source_dir, f)
-
-        # Basisname ohne Endung (z.B. "100" aus "100.jpg")
         base_name = os.path.splitext(f)[0]
 
-        # Ziel: LaMa Standard "name_mask.png"
+        # WICHTIG: Endung muss .png sein (Standard LaMa)!
         target_name = f"{base_name}_mask.png"
         dst_path = os.path.join(val_dir, target_name)
 
         try:
-            # Wir lesen das Bild mit OpenCV, um sicherzugehen, dass das Format stimmt
-            # Masken müssen oft binär oder grayscale sein.
             img = cv2.imread(src_path, cv2.IMREAD_GRAYSCALE)
-            if img is None:
-                continue
+            if img is None: continue
 
-            # Speichern als PNG (verlustfrei, sicherer für Masken)
+            # Speichern als PNG (verlustfrei, Standard)
             cv2.imwrite(dst_path, img)
             count += 1
         except Exception as e:
             print(f"⚠️ Fehler bei Maske {f}: {e}")
 
-    print(f"✅ {count} Masken konvertiert und zusammengeführt.")
+        if i % 100 == 0:
+            print(f"   ... {i}/{total} Masken verarbeitet", end='\r')
+
+    print(f"\n✅ {count} Masken konvertiert (PNG) und zusammengeführt.")
 
 
 def download_perceptual_loss():
@@ -122,33 +123,31 @@ def prepare_data(bucket_name, debug_mode=False):
     os.makedirs(LOCAL_VAL_DIR, exist_ok=True)
     os.makedirs(LOCAL_REAL_VAL_DIR, exist_ok=True)
 
-    # 1. TRAINING (Lade train_2 bis train_9)
+    # 1. TRAINING
     if debug_mode:
         folders_to_train = ["train_2"]
     else:
-        # Hier schließen wir train_1 bewusst aus, da es für Validierung reserviert ist
         folders_to_train = [f"train_{i}" for i in range(2, 10)]
 
     print(f"📥 Lade Training: {folders_to_train}")
     for folder in folders_to_train:
         src = f"gs://{bucket_name}/train/{folder}"
         try:
-            # Ohne /* um Wildcard-Fehler zu vermeiden
             run_cmd_silent(f"gcloud storage cp -r {src} {LOCAL_TRAIN_DIR}")
         except Exception as e:
             print(f"Warnung {folder}: {e}")
     flatten_directory(LOCAL_TRAIN_DIR)
 
-    # 2. VALIDATION (Lade train_1 ORIGINALE)
-    print(f"📥 Lade Validierung (Originale aus train_1)...")
+    # 2. VALIDATION BILDER
+    print(f"📥 Lade Validierung (Bilder)...")
     try:
         run_cmd_silent(f"gcloud storage cp -r gs://{bucket_name}/train/train_1 {LOCAL_VAL_DIR}")
     except Exception as e:
-        print(f"⚠️ Fehler Val Originale: {e}")
+        print(f"⚠️ Fehler Val Bilder: {e}")
     flatten_directory(LOCAL_VAL_DIR)
 
-    # 3. VALIDATION MASKS (Lade train_1_mask)
-    print(f"📥 Lade Validierung (Masken aus train_1_mask)...")
+    # 3. VALIDATION MASKEN
+    print(f"📥 Lade Validierung (Masken)...")
     local_mask_temp = "/tmp/masks_temp"
     os.makedirs(local_mask_temp, exist_ok=True)
     try:
@@ -157,12 +156,10 @@ def prepare_data(bucket_name, debug_mode=False):
         print(f"⚠️ Fehler Val Masken: {e}")
     flatten_directory(local_mask_temp)
 
-    # 4. MERGE (Originale + Masken in einem Ordner)
-    # Wir kopieren die konvertierten Masken in LOCAL_VAL_DIR (visual_test)
+    # 4. MERGE (als PNG!)
     process_and_merge_masks(LOCAL_VAL_DIR, local_mask_temp)
 
-    # 5. SYNC VAL (Kopiere alles von visual_test nach val)
-    # Damit wir für Metriken und visuelle Tests dieselben Daten haben
+    # 5. SYNC VAL
     src_files = os.listdir(LOCAL_VAL_DIR)
     for f in src_files:
         shutil.copy(os.path.join(LOCAL_VAL_DIR, f), LOCAL_REAL_VAL_DIR)
@@ -170,20 +167,20 @@ def prepare_data(bucket_name, debug_mode=False):
     # Final Check
     num_train = len([f for f in os.listdir(LOCAL_TRAIN_DIR) if f.endswith('.jpg')])
     num_val_img = len([f for f in os.listdir(LOCAL_REAL_VAL_DIR) if f.endswith('.jpg')])
+    # WICHTIG: Jetzt prüfen wir auf _mask.png (Standard)
     num_val_mask = len([f for f in os.listdir(LOCAL_REAL_VAL_DIR) if f.endswith('_mask.png')])
 
     print("\n" + "=" * 40)
     print(f"📊 REPORT:")
-    print(f"   Trainings-Bilder (train_2-9): {num_train}")
-    print(f"   Val-Bilder (train_1):         {num_val_img}")
-    print(f"   Val-Masken (konvertiert):     {num_val_mask}")
+    print(f"   Trainings-Bilder: {num_train}")
+    print(f"   Val-Bilder:       {num_val_img}")
+    print(f"   Val-Masken (PNG): {num_val_mask}")
     print("=" * 40 + "\n")
 
     if num_train == 0: raise RuntimeError("❌ Keine Trainingsdaten!")
     if num_val_img == 0: raise RuntimeError("❌ Keine Validierungsdaten!")
-    # Check: Haben wir für jedes Bild eine Maske?
     if num_val_mask < num_val_img * 0.9:
-        print("⚠️ WARNUNG: Viel weniger Masken als Bilder! Stimmen die Dateinamen (z.B. 1.jpg und 1.jpg)?")
+        print("⚠️ WARNUNG: Masken fehlen! (Checke Dateinamen)")
 
     print(f"✅ Fertig in {(time.time() - start) / 60:.2f} min.")
 
@@ -199,16 +196,14 @@ defaults:
 
 train:
   img_suffix: .jpg
-  # Random Masken für Training (Default)
 
 val:
   img_suffix: .jpg
-  # WICHTIG: Hier nutzen wir jetzt die echten Masken
-  mask_suffix: _mask.png
+  # Kein mask_suffix nötig -> LaMa sucht default nach _mask.png
 
 visual_test:
   img_suffix: .jpg
-  mask_suffix: _mask.png
+  # Kein mask_suffix nötig
     """
     data_path = "/app/lama/configs/training/data/my_wikiart_data.yaml"
     with open(data_path, "w") as f:
@@ -222,7 +217,7 @@ def main():
     parser.add_argument('--bucket', type=str, required=True)
     parser.add_argument('--epochs', type=int, default=10)
     parser.add_argument('--debug', action='store_true')
-    # Diese Args werden nicht mehr aktiv genutzt, da wir die Logik fest verdrahtet haben
+    # Unbenutzte Args entfernt
     parser.add_argument('--data-folders', type=str, default="2-9")
     parser.add_argument('--fixed-masks', action='store_true')
     args = parser.parse_args()
@@ -249,7 +244,12 @@ def main():
         f"+trainer.resume_from_checkpoint={PRETRAINED_CKPT}",
         "+trainer.log_every_n_steps=50",
         "optimizers.generator.lr=0.0001",
-        "hydra.run.dir=/tmp/experiments/hydra_logs"
+        "hydra.run.dir=/tmp/experiments/hydra_logs",
+
+        # WICHTIG: Val und Visual Test auf 1 Bild pro Schritt zwingen!
+        # Damit werden unterschiedliche Bildgrößen nacheinander verarbeitet.
+        "++data.val.batch_size=1",
+        "++data.visual_test.batch_size=1"
     ]
 
     print(f"Startbefehl: {' '.join(cmd)}")
@@ -260,9 +260,9 @@ def main():
 
     process.wait()
 
-    print(f"--- 3. Upload ---")
+    print(f"--- 3. Upload nach gs://{args.bucket}/{OUTPUT_FOLDER_NAME} ---")
     try:
-        run_cmd_silent(f"gcloud storage cp -r {LOCAL_MODEL_DIR}/* gs://{args.bucket}/final_model/")
+        run_cmd_silent(f"gcloud storage cp -r {LOCAL_MODEL_DIR}/* gs://{args.bucket}/{OUTPUT_FOLDER_NAME}/")
     except:
         pass
 
