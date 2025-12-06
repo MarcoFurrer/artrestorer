@@ -141,6 +141,24 @@ def prepare_data(bucket_name, debug_mode=False):
         if os.path.isfile(full_file_name):
             shutil.copy(full_file_name, LOCAL_REAL_VAL_DIR)
 
+    # --- FINAL CHECK ---
+    # Zählen der Dateien zur Sicherheit
+    num_train_files = len(
+        [name for name in os.listdir(LOCAL_TRAIN_DIR) if os.path.isfile(os.path.join(LOCAL_TRAIN_DIR, name))])
+    num_val_files = len(
+        [name for name in os.listdir(LOCAL_REAL_VAL_DIR) if os.path.isfile(os.path.join(LOCAL_REAL_VAL_DIR, name))])
+
+    print("\n" + "=" * 40)
+    print(f"📊 STATUS REPORT:")
+    print(f"   Trainings-Bilder: {num_train_files}")
+    print(f"   Validierungs-Bilder: {num_val_files}")
+    print("=" * 40 + "\n")
+
+    if num_train_files == 0:
+        raise RuntimeError("❌ FEHLER: Keine Trainings-Bilder gefunden! Download fehlgeschlagen?")
+    if num_val_files == 0:
+        raise RuntimeError("❌ FEHLER: Keine Validierungs-Bilder gefunden! Download fehlgeschlagen?")
+
     duration = (time.time() - start) / 60
     print(f"✅ Daten fertig in {duration:.2f} Minuten.")
 
