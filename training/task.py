@@ -9,32 +9,31 @@ import traceback
 # --- PFADE ---
 LOCAL_DATA_ROOT = "/tmp/dataset"
 LOCAL_TRAIN_DIR = os.path.join(LOCAL_DATA_ROOT, "train")
-LOCAL_VAL_DIR = os.path.join(LOCAL_DATA_ROOT, "visual_test")
-LOCAL_REAL_VAL_DIR = os.path.join(LOCAL_DATA_ROOT, "val")
+
+# Source Ordner (Rohdaten für das Tool)
+LOCAL_VAL_SOURCE = os.path.join(LOCAL_DATA_ROOT, "val_source")
+LOCAL_TEST_SOURCE = os.path.join(LOCAL_DATA_ROOT, "visual_test_source")
+
+# Ziel Ordner (Fertig generierte PNGs mit Masken)
+LOCAL_VAL_TARGET = os.path.join(LOCAL_DATA_ROOT, "val")
+LOCAL_TEST_TARGET = os.path.join(LOCAL_DATA_ROOT, "visual_test")
+
 LOCAL_MODEL_DIR = "/tmp/experiments"
 PRETRAINED_CKPT = "/app/big-lama/models/best.ckpt"
 
 
 def run_cmd(cmd):
-    """Führt Befehl laut aus"""
     print(f"Executing: {cmd}")
     subprocess.check_call(cmd, shell=True)
 
 
 def run_cmd_silent(cmd):
-    """Führt Befehl KOMPLETT LEISE aus."""
     print(f"Executing (silent): {cmd}")
     try:
-        subprocess.run(
-            cmd,
-            shell=True,
-            check=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
-        )
+        subprocess.run(cmd, shell=True, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except subprocess.CalledProcessError:
-        print(f"⚠️ FEHLER beim stillen Ausführen von: {cmd}")
-        print("🔁 Wiederhole Befehl laut zur Diagnose...")
+        print(f"⚠️ FEHLER bei: {cmd}")
+        print("🔁 Wiederhole laut...")
         subprocess.check_call(cmd, shell=True)
 
 
@@ -49,8 +48,8 @@ def flatten_directory(directory):
                 try:
                     shutil.move(source, target)
                     count += 1
-                except Exception as e:
-                    print(f"Fehler beim Verschieben von {file}: {e}")
+                except:
+                    pass
         for d in dirs:
             try:
                 os.rmdir(os.path.join(root, d))
@@ -59,134 +58,115 @@ def flatten_directory(directory):
     print(f"✅ {count} Dateien flachgeklopft.")
 
 
+def generate_official_masks(input_dir, output_dir, config_name="random_medium_512.yaml"):
+    """
+    Ruft das offizielle LaMa Tool 'gen_mask_dataset.py' auf.
+    Wandelt JPGs in PNGs um und erstellt Masken.
+    """
+    print(f"🏭 Starte LaMa Mask Generator: {input_dir} -> {output_dir}")
+
+    # Pfad zur Config im Container
+    config_path = f"/app/lama/configs/data_gen/{config_name}"
+
+    if not os.path.exists(config_path):
+        # Fallback falls 512 nicht existiert (manche Repos haben nur 256)
+        print(f"⚠️ Config {config_name} nicht gefunden, versuche random_medium_256.yaml")
+        config_path = "/app/lama/configs/data_gen/random_medium_256.yaml"
+
+    # Das offizielle Script aufrufen
+    # Syntax: python bin/gen_mask_dataset.py <config> <indir> <outdir> --ext jpg
+    cmd = f"python3 /app/lama/bin/gen_mask_dataset.py {config_path} {input_dir} {output_dir} --ext jpg"
+
+    # Wir müssen PYTHONPATH setzen, damit das Skript seine Module findet
+    env = os.environ.copy()
+    env['PYTHONPATH'] = "/app/lama"
+
+    subprocess.check_call(cmd, shell=True, env=env)
+    print("✅ Masken Generierung abgeschlossen.")
+
+
 def download_perceptual_loss():
-    print("--- Check: Perceptual Loss Model ---")
     target_dir = "ade20k/ade20k-resnet50dilated-ppm_deepsup"
     target_file = os.path.join(target_dir, "encoder_epoch_20.pth")
-    if os.path.exists(target_file):
-        print("✅ Loss-Modell bereits vorhanden.")
-        return
-    print("⚠️ Loss-Modell fehlt. Lade herunter...")
+    if os.path.exists(target_file): return
     os.makedirs(target_dir, exist_ok=True)
-    url = "http://sceneparsing.csail.mit.edu/model/pytorch/ade20k-resnet50dilated-ppm_deepsup/encoder_epoch_20.pth"
-    run_cmd(f"curl -L -o {target_file} {url}")
-    print("✅ Download abgeschlossen.")
+    run_cmd(
+        f"curl -L -o {target_file} http://sceneparsing.csail.mit.edu/model/pytorch/ade20k-resnet50dilated-ppm_deepsup/encoder_epoch_20.pth")
 
 
 def prepare_data(bucket_name, data_folders_arg, debug_mode=False):
-    print(f"--- 1. Daten Download & Strukturierung [Debug={debug_mode}] ---")
+    print(f"--- 1. Daten Download & Processing ---")
     start = time.time()
 
-    if os.path.exists(LOCAL_DATA_ROOT):
-        shutil.rmtree(LOCAL_DATA_ROOT)
+    if os.path.exists(LOCAL_DATA_ROOT): shutil.rmtree(LOCAL_DATA_ROOT)
 
+    # Ordner erstellen
     os.makedirs(LOCAL_TRAIN_DIR, exist_ok=True)
-    os.makedirs(LOCAL_VAL_DIR, exist_ok=True)
-    os.makedirs(LOCAL_REAL_VAL_DIR, exist_ok=True)
+    os.makedirs(LOCAL_VAL_SOURCE, exist_ok=True)  # Source für Generator
+    # Target Ordner werden vom Script erstellt oder müssen leer sein
 
-    # TRAINING
+    # 1. TRAINING (Bleibt JPG, da on-the-fly masking)
     folders_to_train = []
     if debug_mode:
-        print("⚡ DEBUG MODUS: Lade nur train_2...")
         folders_to_train = ["train_2"]
     elif "-" in data_folders_arg:
-        start_idx, end_idx = map(int, data_folders_arg.split("-"))
-        folders_to_train = [f"train_{i}" for i in range(start_idx, end_idx + 1)]
+        s, e = map(int, data_folders_arg.split("-"))
+        folders_to_train = [f"train_{i}" for i in range(s, e + 1)]
     else:
         folders_to_train = [f"train_{data_folders_arg}"]
 
-    print(f"Lade Ordner: {folders_to_train}")
+    print(f"Lade Training: {folders_to_train}")
     for folder in folders_to_train:
-        src = f"gs://{bucket_name}/train/{folder}"
         try:
-            run_cmd_silent(f"gcloud storage cp -r {src} {LOCAL_TRAIN_DIR}")
-        except Exception as e:
-            print(f"⚠️ Warnung bei {folder}: {e}")
+            run_cmd_silent(f"gcloud storage cp -r gs://{bucket_name}/train/{folder} {LOCAL_TRAIN_DIR}")
+        except:
+            pass
     flatten_directory(LOCAL_TRAIN_DIR)
 
-    # TEST/VAL
-    print(f"Lade Test-Daten...")
+    # 2. VAL & TEST (Laden in SOURCE Ordner)
+    print(f"Lade Test-Daten (Source)...")
     try:
-        run_cmd_silent(f"gcloud storage cp -r gs://{bucket_name}/test/test {LOCAL_VAL_DIR}")
-    except Exception:
-        try:
-            run_cmd_silent(f"gcloud storage cp -r gs://{bucket_name}/test {LOCAL_VAL_DIR}")
-        except Exception as e:
-            print(f"⚠️ Test-Daten Fehler: {e}")
-    flatten_directory(LOCAL_VAL_DIR)
+        # Wir laden die Daten erst in val_source
+        run_cmd_silent(f"gcloud storage cp -r gs://{bucket_name}/test/test {LOCAL_VAL_SOURCE}")
+    except:
+        run_cmd_silent(f"gcloud storage cp -r gs://{bucket_name}/test {LOCAL_VAL_SOURCE}")
+    flatten_directory(LOCAL_VAL_SOURCE)
 
-    # COPY TO VAL
-    print(f"Kopiere Daten von {LOCAL_VAL_DIR} nach {LOCAL_REAL_VAL_DIR}...")
-    src_files = os.listdir(LOCAL_VAL_DIR)
-    for file_name in src_files:
-        full_file_name = os.path.join(LOCAL_VAL_DIR, file_name)
-        if os.path.isfile(full_file_name):
-            shutil.copy(full_file_name, LOCAL_REAL_VAL_DIR)
+    # 3. GENERATOR LAUFEN LASSEN
+    # Erzeugt saubere Daten in LOCAL_VAL_TARGET (val)
+    # Wir nutzen dieselben Daten für Visual Test
+    generate_official_masks(LOCAL_VAL_SOURCE, LOCAL_VAL_TARGET)
+    generate_official_masks(LOCAL_VAL_SOURCE, LOCAL_TEST_TARGET)
 
-    # CHECK
-    num_train_files = len(
-        [name for name in os.listdir(LOCAL_TRAIN_DIR) if os.path.isfile(os.path.join(LOCAL_TRAIN_DIR, name))])
-    num_val_files = len(
-        [name for name in os.listdir(LOCAL_REAL_VAL_DIR) if os.path.isfile(os.path.join(LOCAL_REAL_VAL_DIR, name))])
+    # Final Check
+    num_train = len(os.listdir(LOCAL_TRAIN_DIR))
+    num_val = len(os.listdir(LOCAL_VAL_TARGET))
+    print(f"📊 Train JPGs: {num_train} | Val PNGs (Masked): {num_val}")
 
-    print("\n" + "=" * 40)
-    print(f"📊 STATUS REPORT:")
-    print(f"   Trainings-Bilder: {num_train_files}")
-    print(f"   Validierungs-Bilder: {num_val_files}")
-    print("=" * 40 + "\n")
-
-    if num_train_files == 0: raise RuntimeError("❌ FEHLER: Keine Trainings-Bilder!")
-    if num_val_files == 0: raise RuntimeError("❌ FEHLER: Keine Validierungs-Bilder!")
-
-    print(f"✅ Daten fertig in {(time.time() - start) / 60:.2f} Minuten.")
+    if num_train == 0 or num_val == 0: raise RuntimeError("Daten fehlen!")
+    print(f"✅ Fertig in {(time.time() - start) / 60:.2f} min.")
 
 
-def create_yaml_config(use_fixed_masks=False):
-    # 1. Location
+def create_yaml_config():
     loc_path = "/app/lama/configs/training/location/my_cloud_data.yaml"
     with open(loc_path, "w") as f:
         f.write(f"data_root_dir: {LOCAL_DATA_ROOT}\nout_root_dir: {LOCAL_MODEL_DIR}\ntb_dir: {LOCAL_MODEL_DIR}/tb_logs")
 
-    # 2. Data Config (Hardcoded Fix für Phase 1)
-    if use_fixed_masks:
-        # Phase 2 (Später)
-        print("🎭 CONFIG: Fixed Masks")
-        mask_block = "mask_generator: null"
-        suffix_line = "mask_suffix: _mask.png"
-    else:
-        # Phase 1 (JETZT): Wir definieren den Generator explizit für VAL!
-        print("🎲 CONFIG: Random Masks (Hardcoded for Val)")
-        mask_block = """
-  mask_generator:
-    kind: irregular
-    kwargs:
-      max_angle: 4
-      max_len: 200
-      max_width: 100
-      max_times: 5
-      min_times: 1
-        """
-        suffix_line = ""
-
-    # Wir nutzen hier mask_block auch für TRAIN, um sicher zu sein,
-    # aber wichtig ist er für VAL und VISUAL_TEST.
-    data_content = f"""
+    # WICHTIG: Val & Test sind jetzt .png (vom Generator erstellt)
+    # Train bleibt .jpg (on-the-fly)
+    data_content = """
 defaults:
   - abl-04-256-mh-dist
 
 train:
   img_suffix: .jpg
-  {suffix_line}
 
 val:
-  img_suffix: .jpg
-  {mask_block}
-  {suffix_line}
+  img_suffix: .png
+  # Keine Masken-Generierung mehr nötig, da Files existieren!
 
 visual_test:
-  img_suffix: .jpg
-  {mask_block}
-  {suffix_line}
+  img_suffix: .png
     """
     data_path = "/app/lama/configs/training/data/my_wikiart_data.yaml"
     with open(data_path, "w") as f:
@@ -207,17 +187,15 @@ def main():
     prepare_data(args.bucket, args.data_folders, debug_mode=args.debug)
     download_perceptual_loss()
 
-    loc_conf, data_conf = create_yaml_config(use_fixed_masks=args.fixed_masks)
+    loc_conf, data_conf = create_yaml_config()
 
-    print(f"--- 2. Starte Big-Lama Training [FixedMasks={args.fixed_masks}] ---")
+    print(f"--- 2. Starte Big-Lama Training ---")
 
     env = os.environ.copy()
     env['PYTHONPATH'] = os.getcwd() + "/lama"
     env['USER'] = "root"
     env['TORCH_HOME'] = os.getcwd()
 
-    # WICHTIG: Die ++ Overrides für img_suffix sind weg, da wir sie jetzt sauber
-    # im Yaml-File (data_conf) definiert haben. Das ist viel stabiler!
     cmd = [
         sys.executable, "-u", "lama/bin/train.py",
         "-cn", "big-lama",
@@ -232,7 +210,6 @@ def main():
     ]
 
     print(f"Startbefehl: {' '.join(cmd)}")
-
     process = subprocess.Popen(cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
 
     for line in process.stdout:
@@ -240,7 +217,7 @@ def main():
 
     process.wait()
 
-    print(f"--- 3. Upload Ergebnisse ---")
+    print(f"--- 3. Upload ---")
     try:
         run_cmd_silent(f"gcloud storage cp -r {LOCAL_MODEL_DIR}/* gs://{args.bucket}/final_model/")
     except Exception as e:
@@ -254,5 +231,4 @@ if __name__ == "__main__":
     try:
         main()
     except Exception:
-        traceback.print_exc()
-        sys.exit(1)
+        traceback.print_exc(); sys.exit(1)
