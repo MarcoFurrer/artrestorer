@@ -65,12 +65,35 @@ def flatten_directory(directory):
     print(f"✅ {count} Dateien verschoben.")
 
 
+def resize_images_in_dir(directory, size=(512, 512)):
+    """
+    NEU: Skaliert alle Bilder in einem Ordner auf eine feste Größe.
+    Notwendig für Batching (batch_size > 1).
+    """
+    print(f"📏 Resizing Bilder in {directory} auf {size}...")
+    files = [f for f in os.listdir(directory) if f.lower().endswith(('.jpg', '.png', '.jpeg'))]
+    count = 0
+    for f in files:
+        path = os.path.join(directory, f)
+        try:
+            img = cv2.imread(path)
+            if img is None: continue
+            # Resize
+            img = cv2.resize(img, size, interpolation=cv2.INTER_AREA)
+            # Überschreiben
+            cv2.imwrite(path, img, [int(cv2.IMWRITE_JPEG_QUALITY), 100])
+            count += 1
+        except:
+            pass
+    print(f"✅ {count} Bilder resized.")
+
+
 def process_and_merge_masks(val_dir, mask_source_dir):
     """
-    Nimmt Masken, konvertiert sie zu PNG und speichert sie als _mask.png.
-    Wir nutzen PNG, da dies der Standard-Suffix von LaMa ist.
+    Nimmt Masken, RESIZED sie auf 512x512, konvertiert sie zu PNG
+    und speichert sie als _mask.png.
     """
-    print(f"⚙️ Verarbeite Masken von {mask_source_dir} nach {val_dir}...")
+    print(f"⚙️ Verarbeite & Resize Masken von {mask_source_dir} nach {val_dir}...")
 
     mask_files = os.listdir(mask_source_dir)
     total = len(mask_files)
@@ -80,7 +103,6 @@ def process_and_merge_masks(val_dir, mask_source_dir):
         src_path = os.path.join(mask_source_dir, f)
         base_name = os.path.splitext(f)[0]
 
-        # WICHTIG: Endung muss .png sein (Standard LaMa)!
         target_name = f"{base_name}_mask.png"
         dst_path = os.path.join(val_dir, target_name)
 
@@ -88,7 +110,10 @@ def process_and_merge_masks(val_dir, mask_source_dir):
             img = cv2.imread(src_path, cv2.IMREAD_GRAYSCALE)
             if img is None: continue
 
-            # Speichern als PNG (verlustfrei, Standard)
+            # WICHTIG: Auch Maske auf 512x512 zwingen!
+            img = cv2.resize(img, (512, 512), interpolation=cv2.INTER_NEAREST)
+
+            # Speichern als PNG
             cv2.imwrite(dst_path, img)
             count += 1
         except Exception as e:
@@ -97,7 +122,7 @@ def process_and_merge_masks(val_dir, mask_source_dir):
         if i % 100 == 0:
             print(f"   ... {i}/{total} Masken verarbeitet", end='\r')
 
-    print(f"\n✅ {count} Masken konvertiert (PNG) und zusammengeführt.")
+    print(f"\n✅ {count} Masken resized & konvertiert.")
 
 
 def download_perceptual_loss():
@@ -146,6 +171,9 @@ def prepare_data(bucket_name, debug_mode=False):
         print(f"⚠️ Fehler Val Bilder: {e}")
     flatten_directory(LOCAL_VAL_DIR)
 
+    # NEU: Bilder auf 512x512 zwingen
+    resize_images_in_dir(LOCAL_VAL_DIR, size=(512, 512))
+
     # 3. VALIDATION MASKEN
     print(f"📥 Lade Validierung (Masken)...")
     local_mask_temp = "/tmp/masks_temp"
@@ -156,7 +184,7 @@ def prepare_data(bucket_name, debug_mode=False):
         print(f"⚠️ Fehler Val Masken: {e}")
     flatten_directory(local_mask_temp)
 
-    # 4. MERGE (als PNG!)
+    # 4. MERGE (mit Resize auf 512x512!)
     process_and_merge_masks(LOCAL_VAL_DIR, local_mask_temp)
 
     # 5. SYNC VAL
@@ -167,14 +195,13 @@ def prepare_data(bucket_name, debug_mode=False):
     # Final Check
     num_train = len([f for f in os.listdir(LOCAL_TRAIN_DIR) if f.endswith('.jpg')])
     num_val_img = len([f for f in os.listdir(LOCAL_REAL_VAL_DIR) if f.endswith('.jpg')])
-    # WICHTIG: Jetzt prüfen wir auf _mask.png (Standard)
     num_val_mask = len([f for f in os.listdir(LOCAL_REAL_VAL_DIR) if f.endswith('_mask.png')])
 
     print("\n" + "=" * 40)
     print(f"📊 REPORT:")
     print(f"   Trainings-Bilder: {num_train}")
-    print(f"   Val-Bilder:       {num_val_img}")
-    print(f"   Val-Masken (PNG): {num_val_mask}")
+    print(f"   Val-Bilder (512px): {num_val_img}")
+    print(f"   Val-Masken (512px): {num_val_mask}")
     print("=" * 40 + "\n")
 
     if num_train == 0: raise RuntimeError("❌ Keine Trainingsdaten!")
@@ -239,17 +266,15 @@ def main():
         "-cn", "big-lama",
         f"location={loc_conf}",
         f"data={data_conf}",
+
+        # JETZT GEHTS: Batch Size 4 ist sicher, da alle Bilder 512x512 sind
         "data.batch_size=4",
+
         f"+trainer.max_epochs={args.epochs}",
         f"+trainer.resume_from_checkpoint={PRETRAINED_CKPT}",
         "+trainer.log_every_n_steps=50",
         "optimizers.generator.lr=0.0001",
-        "hydra.run.dir=/tmp/experiments/hydra_logs",
-
-        # WICHTIG: Val und Visual Test auf 1 Bild pro Schritt zwingen!
-        # Damit werden unterschiedliche Bildgrößen nacheinander verarbeitet.
-        "++data.val.batch_size=1",
-        "++data.visual_test.batch_size=1"
+        "hydra.run.dir=/tmp/experiments/hydra_logs"
     ]
 
     print(f"Startbefehl: {' '.join(cmd)}")
