@@ -16,7 +16,7 @@ PRETRAINED_CKPT = "/app/big-lama/models/best.ckpt"
 
 
 def run_cmd(cmd):
-    """Führt Befehl laut aus (für kurze wichtige Dinge)"""
+    """Führt Befehl laut aus"""
     print(f"Executing: {cmd}")
     subprocess.check_call(cmd, shell=True)
 
@@ -38,6 +38,37 @@ def run_cmd_silent(cmd):
         subprocess.check_call(cmd, shell=True)
 
 
+def flatten_directory(directory):
+    """
+    Holt alle Dateien aus Unterordnern in das Hauptverzeichnis
+    und löscht danach die leeren Unterordner.
+    """
+    print(f"🔨 Flattening directory: {directory} ...")
+    count = 0
+    # Wir laufen von unten nach oben durch
+    for root, dirs, files in os.walk(directory, topdown=False):
+        for file in files:
+            source = os.path.join(root, file)
+            target = os.path.join(directory, file)
+
+            # Nur verschieben, wenn es nicht schon am richtigen Ort ist
+            if root != directory:
+                try:
+                    shutil.move(source, target)
+                    count += 1
+                except Exception as e:
+                    print(f"Fehler beim Verschieben von {file}: {e}")
+
+        # Leere Ordner löschen
+        for d in dirs:
+            try:
+                os.rmdir(os.path.join(root, d))
+            except:
+                pass  # Ordner nicht leer, ignorieren
+
+    print(f"✅ {count} Dateien flachgeklopft.")
+
+
 def download_perceptual_loss():
     print("--- Check: Perceptual Loss Model ---")
     target_dir = "ade20k/ade20k-resnet50dilated-ppm_deepsup"
@@ -55,12 +86,18 @@ def download_perceptual_loss():
 
 
 def prepare_data(bucket_name, debug_mode=False):
-    print(f"--- 1. Daten Download (Silent Mode) [Debug={debug_mode}] ---")
+    print(f"--- 1. Daten Download & Strukturierung [Debug={debug_mode}] ---")
     start = time.time()
 
-    os.makedirs(LOCAL_TRAIN_DIR, exist_ok=True)
+    # Ordner resetten
+    if os.path.exists(LOCAL_DATA_ROOT):
+        shutil.rmtree(LOCAL_DATA_ROOT)
 
-    # TRAINING DATA
+    os.makedirs(LOCAL_TRAIN_DIR, exist_ok=True)
+    os.makedirs(LOCAL_VAL_DIR, exist_ok=True)
+    os.makedirs(LOCAL_REAL_VAL_DIR, exist_ok=True)
+
+    # --- TRAINING DATA ---
     if debug_mode:
         print("⚡ DEBUG MODUS: Lade NUR train_2...")
         folders_to_train = ["train_2"]
@@ -72,32 +109,37 @@ def prepare_data(bucket_name, debug_mode=False):
     for folder in folders_to_train:
         src = f"gs://{bucket_name}/train/{folder}"
         try:
-            target = os.path.join(LOCAL_TRAIN_DIR, folder)
-            os.makedirs(target, exist_ok=True)
-            run_cmd_silent(f"gcloud storage cp -r {src}/* {target}")
+            # 1. Download (mit Struktur, weil schnell)
+            run_cmd_silent(f"gcloud storage cp -r {src} {LOCAL_TRAIN_DIR}")
         except Exception as e:
             print(f"⚠️ Warnung bei {folder}: {e}")
 
-    # TEST & VAL DATA
-    print(f"Lade Test-Daten nach {LOCAL_VAL_DIR}...")
-    os.makedirs(LOCAL_VAL_DIR, exist_ok=True)
+    # 2. Flatten (Struktur entfernen)
+    flatten_directory(LOCAL_TRAIN_DIR)
+
+    # --- TEST & VAL DATA ---
+    print(f"Lade Test-Daten...")
+    # Wir laden erst alles in visual_test (TEMP)
     try:
-        run_cmd_silent(f"gcloud storage cp -r gs://{bucket_name}/test/test/* {LOCAL_VAL_DIR}")
+        run_cmd_silent(f"gcloud storage cp -r gs://{bucket_name}/test/test {LOCAL_VAL_DIR}")
     except Exception:
         try:
-            run_cmd_silent(f"gcloud storage cp -r gs://{bucket_name}/test/* {LOCAL_VAL_DIR}")
+            run_cmd_silent(f"gcloud storage cp -r gs://{bucket_name}/test {LOCAL_VAL_DIR}")
         except Exception as e:
             print(f"⚠️ Test-Daten Fehler: {e}")
 
-    # VAL DATA (Symlink)
-    if os.path.exists(LOCAL_REAL_VAL_DIR):
-        if os.path.islink(LOCAL_REAL_VAL_DIR):
-            os.unlink(LOCAL_REAL_VAL_DIR)
-        else:
-            shutil.rmtree(LOCAL_REAL_VAL_DIR)
+    # Auch hier: Flatten, falls durch Download Unterordner entstanden sind (z.B. visual_test/test/...)
+    flatten_directory(LOCAL_VAL_DIR)
 
-    print(f"Erstelle Symlink für Validierung: {LOCAL_REAL_VAL_DIR} -> {LOCAL_VAL_DIR}")
-    os.symlink(LOCAL_VAL_DIR, LOCAL_REAL_VAL_DIR)
+    # JETZT: Physisches Kopieren nach 'val' (Kein Symlink!)
+    print(f"Kopiere Daten von {LOCAL_VAL_DIR} nach {LOCAL_REAL_VAL_DIR}...")
+
+    # Wir kopieren alle Dateien
+    src_files = os.listdir(LOCAL_VAL_DIR)
+    for file_name in src_files:
+        full_file_name = os.path.join(LOCAL_VAL_DIR, file_name)
+        if os.path.isfile(full_file_name):
+            shutil.copy(full_file_name, LOCAL_REAL_VAL_DIR)
 
     duration = (time.time() - start) / 60
     print(f"✅ Daten fertig in {duration:.2f} Minuten.")
@@ -145,8 +187,7 @@ def main():
         "optimizers.generator.lr=0.0001",
         "hydra.run.dir=/tmp/experiments/hydra_logs",
 
-        # FIX: Wir nutzen jetzt ++ (Force Override)
-        # Das funktioniert IMMER, egal ob der Key schon da ist oder nicht.
+        # Override mit ++ (Force)
         "++data.train.img_suffix=.jpg",
         "++data.val.img_suffix=.jpg",
         "++data.visual_test.img_suffix=.jpg"
