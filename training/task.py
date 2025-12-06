@@ -215,23 +215,26 @@ def prepare_data(bucket_name, debug_mode=False):
 def create_yaml_config():
     loc_path = "/app/lama/configs/training/location/my_cloud_data.yaml"
     with open(loc_path, "w") as f:
-        f.write(f"data_root_dir: {LOCAL_DATA_ROOT}\nout_root_dir: {LOCAL_MODEL_DIR}\ntb_dir: {LOCAL_MODEL_DIR}/tb_logs")
+        f.write(
+            f"data_root_dir: {LOCAL_DATA_ROOT}\n"
+            f"out_root_dir: {LOCAL_MODEL_DIR}\n"
+            f"tb_dir: {LOCAL_MODEL_DIR}/tb_logs"
+        )
 
+    # WICHTIG: KEIN img_suffix unter `train`, sonst knallt InpaintingTrainDataset
     data_content = """
 defaults:
   - abl-04-256-mh-dist
 
-train:
-  img_suffix: .jpg
+# Train-Block weglassen oder nur Felder benutzen, die LaMa wirklich kennt.
+# In deiner Version wird train sowieso über InpaintingTrainDataset(**, '*.jpg') gesteuert.
 
 val:
-  img_suffix: .jpg
-  # Kein mask_suffix nötig -> LaMa sucht default nach _mask.png
+  img_suffix: .jpg     # InpaintingDataset unterstützt img_suffix
 
 visual_test:
-  img_suffix: .jpg
-  # Kein mask_suffix nötig
-    """
+  img_suffix: .jpg     # InpaintingEvalOnlineDataset unterstützt img_suffix
+"""
     data_path = "/app/lama/configs/training/data/my_wikiart_data.yaml"
     with open(data_path, "w") as f:
         f.write(data_content)
@@ -267,13 +270,14 @@ def main():
         f"location={loc_conf}",
         f"data={data_conf}",
 
-        # JETZT GEHTS: Batch Size 4 ist sicher, da alle Bilder 512x512 sind
         "data.batch_size=4",
 
         f"+trainer.max_epochs={args.epochs}",
         f"+trainer.resume_from_checkpoint={PRETRAINED_CKPT}",
         "+trainer.log_every_n_steps=50",
         "optimizers.generator.lr=0.0001",
+        # NEU: Validation nur einmal pro Epoche
+        "+trainer.val_check_interval=1.0",
         "hydra.run.dir=/tmp/experiments/hydra_logs"
     ]
 
