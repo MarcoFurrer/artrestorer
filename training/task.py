@@ -278,7 +278,8 @@ def main():
         # Das hier kannst du lassen, wenn es vorher schon funktioniert hat:
         f"+trainer.resume_from_checkpoint={PRETRAINED_CKPT}",
 
-        "trainer.kwargs.precision=16",
+        # !!! DIESE ZEILE RAUS:
+        # "trainer.kwargs.precision=16",
 
         # log_every_n_steps ebenfalls im kwargs-Block
         "trainer.kwargs.log_every_n_steps=50",
