@@ -270,15 +270,28 @@ def main():
         f"location={loc_conf}",
         f"data={data_conf}",
 
-        "data.batch_size=4",
+        "data.batch_size=12",
 
-        f"+trainer.max_epochs={args.epochs}",
+        # WICHTIG: max_epochs im kwargs-Block des Trainers
+        "trainer.kwargs.max_epochs={}".format(args.epochs),
+
+        # Das hier kannst du lassen, wenn es vorher schon funktioniert hat:
         f"+trainer.resume_from_checkpoint={PRETRAINED_CKPT}",
-        "+trainer.log_every_n_steps=50",
+
+        "trainer.kwargs.precision=16",
+
+        # log_every_n_steps ebenfalls im kwargs-Block
+        "trainer.kwargs.log_every_n_steps=50",
+
         "optimizers.generator.lr=0.0001",
-        # NEU: Validation nur einmal pro Epoche
-        "+trainer.val_check_interval=1.0",
-        "hydra.run.dir=/tmp/experiments/hydra_logs"
+
+        # ENTSCHEIDEND: hier überschreiben wir das 25000-Ding:
+        "trainer.kwargs.val_check_interval=1.0",  # 1.0 = einmal pro Epoche
+
+        # HIER NEU:
+        "trainer.kwargs.log_gpu_memory=null",     # GPU-Memory-Logging abschalten
+
+        "hydra.run.dir=/tmp/experiments/hydra_logs",
     ]
 
     print(f"Startbefehl: {' '.join(cmd)}")
@@ -289,13 +302,18 @@ def main():
 
     process.wait()
 
-    print(f"--- 3. Upload nach gs://{args.bucket}/{OUTPUT_FOLDER_NAME} ---")
-    try:
-        run_cmd_silent(f"gcloud storage cp -r {LOCAL_MODEL_DIR}/* gs://{args.bucket}/{OUTPUT_FOLDER_NAME}/")
-    except:
-        pass
-
-    if process.returncode != 0:
+    if process.returncode == 0:
+        print(f"--- 3. Upload nach gs://{args.bucket}/{OUTPUT_FOLDER_NAME} ---")
+        if os.path.isdir(LOCAL_MODEL_DIR) and os.listdir(LOCAL_MODEL_DIR):
+            try:
+                run_cmd_silent(
+                    f"gcloud storage cp -r {LOCAL_MODEL_DIR}/* gs://{args.bucket}/{OUTPUT_FOLDER_NAME}/"
+                )
+            except Exception as e:
+                print(f"⚠️ Upload fehlgeschlagen: {e}")
+        else:
+            print("⚠️ Kein Inhalt in /tmp/experiments, überspringe Upload.")
+    else:
         raise RuntimeError(f"Exit Code {process.returncode}")
 
 
