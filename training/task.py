@@ -270,7 +270,7 @@ def main():
         f"location={loc_conf}",
         f"data={data_conf}",
 
-        "data.batch_size=12",
+        "data.batch_size=10",
 
         # WICHTIG: max_epochs im kwargs-Block des Trainers
         "trainer.kwargs.max_epochs={}".format(args.epochs),
