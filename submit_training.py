@@ -56,7 +56,7 @@ def submit_custom_job():
         args=training_args,
         replica_count=1,
         # HARDWARE UPGRADE:
-        machine_type="g2-standard-4",  # G2 ist für L4 optimiert
+        machine_type="g2-standard-8",  # G2 ist für L4 optimiert
         accelerator_type="NVIDIA_L4",
         accelerator_count=1,
         boot_disk_size_gb=300,

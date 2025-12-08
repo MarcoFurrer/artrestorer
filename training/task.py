@@ -270,28 +270,26 @@ def main():
         f"location={loc_conf}",
         f"data={data_conf}",
 
-        "data.batch_size=10",
+        # GPU-Auslastung: konservativ, aber gut
+        "data.batch_size=12",
 
-        # WICHTIG: max_epochs im kwargs-Block des Trainers
+        # CPU- & IO-Tuning:
+        "data.train.dataloader_kwargs.num_workers=6",  # oder 8, wenn du willst
+        "data.val.dataloader_kwargs.num_workers=3",  # oder 4
+
+        # Trainer-Settings: IMMER über kwargs, weil pl.Trainer(**trainer.kwargs)
         "trainer.kwargs.max_epochs={}".format(args.epochs),
+        "trainer.kwargs.log_every_n_steps=50",
+        "trainer.kwargs.val_check_interval=1.0",
+        "trainer.kwargs.log_gpu_memory=null",  # GPU-Memory-Logging aus
 
-        # Das hier kannst du lassen, wenn es vorher schon funktioniert hat:
+        # KEIN precision=16 hier → vermeidet den Half/FFT-Bug
+        # (also einfach NICHT setzen)
+
+        # Resume kann so bleiben, wenn LaMa das wirklich liest:
         f"+trainer.resume_from_checkpoint={PRETRAINED_CKPT}",
 
-        # !!! DIESE ZEILE RAUS:
-        # "trainer.kwargs.precision=16",
-
-        # log_every_n_steps ebenfalls im kwargs-Block
-        "trainer.kwargs.log_every_n_steps=50",
-
         "optimizers.generator.lr=0.0001",
-
-        # ENTSCHEIDEND: hier überschreiben wir das 25000-Ding:
-        "trainer.kwargs.val_check_interval=1.0",  # 1.0 = einmal pro Epoche
-
-        # HIER NEU:
-        "trainer.kwargs.log_gpu_memory=null",     # GPU-Memory-Logging abschalten
-
         "hydra.run.dir=/tmp/experiments/hydra_logs",
     ]
 
