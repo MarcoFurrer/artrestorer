@@ -6,9 +6,9 @@ def process_file(file):
     """Process single file"""
     try:
         main(
-            os.path.join("train_1", file),
-            os.path.join("train_1_destructed", file),
-            os.path.join("train_1_mask", file),
+            os.path.join("test", file),
+            os.path.join("test_destructed", file),
+            os.path.join("test_mask", file),
             save_type="JPEG",
         )
         print(f"✓ {file}")
@@ -16,7 +16,7 @@ def process_file(file):
         print(f"✗ {file}: {e}")
 
 if __name__ == "__main__":
-    files = [f for f in os.listdir("train_1")]
+    files = [f for f in os.listdir("test")]
     
     # Use all available CPU cores
     num_workers = cpu_count()
