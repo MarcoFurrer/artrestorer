@@ -21,8 +21,8 @@ app = FastAPI(title="LaMa Inpainting API")
 # --- Globale Variablen ---
 MODEL = None
 DEVICE = "cpu"  # Setze auf "cuda" für GPU Support
-MODEL_PATH = "big-lama/models/best.ckpt"
-CONFIG_PATH = "big-lama/config.yaml"
+MODEL_PATH = "big-lama/models/final_model_custom_hydra_logs_models_last.ckpt"
+CONFIG_PATH = "big-lama/final_model_custom_hydra_logs_.hydra_config.yaml"
 
 
 def load_lama_model():

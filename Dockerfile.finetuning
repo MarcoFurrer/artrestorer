@@ -1,0 +1,46 @@
+# Base Image mit CUDA 11.1
+FROM pytorch/pytorch:1.8.0-cuda11.1-cudnn8-runtime
+
+# 1. System-Updates
+RUN apt-get update && apt-get install -y \
+    curl \
+    gnupg \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    && echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] http://packages.cloud.google.com/apt cloud-sdk main" | tee -a /etc/apt/sources.list.d/google-cloud-sdk.list \
+    && curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key --keyring /usr/share/keyrings/cloud.google.gpg add - \
+    && apt-get update && apt-get install -y google-cloud-cli \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# 2. Python Dependencies (FIX: numpy upgraden)
+# Wir erzwingen Torch GPU (+cu111) UND upgraden numpy auf 1.23.5
+RUN pip install --no-cache-dir \
+    "numpy==1.23.5" \
+    torch==1.8.0+cu111 \
+    torchvision==0.9.0+cu111 \
+    -f https://download.pytorch.org/whl/torch_stable.html \
+    "networkx<3.0" \
+    pytorch-lightning==1.2.9 \
+    hydra-core==1.1.0 \
+    scikit-image \
+    opencv-python \
+    fastapi \
+    uvicorn \
+    python-multipart \
+    pyyaml \
+    easydict \
+    webdataset \
+    kornia==0.5.0 \
+    albumentations==0.5.2 \
+    pandas \
+    scikit-learn \
+    google-cloud-storage
+
+# 3. Code kopieren
+COPY . /app
+
+ENV PYTHONPATH="${PYTHONPATH}:/app/lama"
+EXPOSE 8000
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]

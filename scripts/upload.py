@@ -13,9 +13,9 @@ SERVICE_ACCOUNT_EMAIL = os.getenv("GCP_SERVICE_ACCOUNT_EMAIL", f"vertex-ai-runne
 REPO_NAME = "vertex-ai-repo"  # Repository Name
 
 # ⬇️ *** ANPASSUNGEN FÜR LAMA RESTORER *** ⬇️
-NEW_APP_NAME = "lama-restorer-v1"
+NEW_APP_NAME = "lama-restorer-v2"
 IMAGE_TAG = f"{NEW_APP_NAME}:latest"
-CLOUD_RUN_SERVICE_NAME = "lama-restorer-api"
+CLOUD_RUN_SERVICE_NAME = "lama-restorer2-api"
 
 # WICHTIG: Port muss mit dem Dockerfile EXPOSE übereinstimmen (wir nutzen 8000)
 CONTAINER_PORT = 8000
