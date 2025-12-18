@@ -9,6 +9,7 @@ import shutil
 import base64
 import httpx
 from io import BytesIO
+import asyncio
 
 app = FastAPI(title="Art Restorer")
 
@@ -63,73 +64,57 @@ async def upload_image(file: UploadFile = File(...)):
 
 @app.post("/process")
 async def process_with_mask(filename: str = Form(...), mask_data: str = Form(...)):
-    """Handle mask and process restoration"""
     try:
-        # Parse base name from filename
         base_name = os.path.splitext(filename)[0]
         file_ext = os.path.splitext(filename)[1]
-        
-        # Save mask with naming convention: image1_mask001.png
+
+        # Maske speichern
         mask_filename = f"{base_name}_mask001.png"
         mask_path = UPLOAD_DIR / mask_filename
-        
-        # Decode base64 mask data
-        mask_data_str = mask_data.split(',')[1]  # Remove data:image/png;base64,
+        mask_data_str = mask_data.split(',')[1]
         mask_bytes = base64.b64decode(mask_data_str)
-        
-        # Save mask as PNG
         with open(mask_path, "wb") as f:
             f.write(mask_bytes)
-        
-        # Read the uploaded image
+
+        # Original Bild laden
         upload_path = UPLOAD_DIR / filename
         with open(upload_path, "rb") as f:
             image_bytes = f.read()
-        
-        # Call the cloud inpainting API
-        api_url = "https://lama-restorer-api-210237704517.europe-west4.run.app/inpaint"
-        
-        # Prepare multipart form data
-        files = {
-            'image': (filename, BytesIO(image_bytes), 'image/jpeg'),
-            'mask': (mask_filename, BytesIO(mask_bytes), 'image/png')
-        }
-        
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            response = await client.post(api_url, files=files)
-        
-        if response.status_code == 200:
-            # Save the restored image
-            restored_filename = f"{base_name}_restored{file_ext}"
-            restored_path = RESTORED_DIR / restored_filename
-            
-            with open(restored_path, "wb") as f:
-                f.write(response.content)
-            
-            return JSONResponse({
-                "success": True,
-                "original_url": f"/uploads/{filename}",
-                "mask_url": f"/uploads/{mask_filename}",
-                "restored_url": f"/restored/{restored_filename}",
-                "message": "Image processed successfully"
-            })
-        else:
-            return JSONResponse({
-                "success": False,
-                "message": f"API error: {response.status_code} - {response.text}"
-            }, status_code=500)
-    
-    except httpx.TimeoutException:
-        return JSONResponse({
-            "success": False,
-            "message": "Request timeout - the restoration is taking longer than expected"
-        }, status_code=504)
-    except Exception as e:
-        return JSONResponse({
-            "success": False,
-            "message": f"Error processing image: {str(e)}"
-        }, status_code=500)
 
+        # URLs für beide Modelle
+        urls = {
+            "normal": "https://lama-restorer-api-210237704517.europe-west4.run.app/inpaint",
+            "finetuned": "https://lama-restorer2-api-210237704517.europe-west4.run.app/inpaint"
+        }
+
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            # Parallel abschicken
+            tasks = [
+                client.post(urls["normal"], files={'image': (filename, BytesIO(image_bytes)),
+                                                   'mask': (mask_filename, BytesIO(mask_bytes))}),
+                client.post(urls["finetuned"], files={'image': (filename, BytesIO(image_bytes)),
+                                                      'mask': (mask_filename, BytesIO(mask_bytes))})
+            ]
+            responses = await asyncio.gather(*tasks)
+
+        results = {}
+        for key, resp in zip(["normal", "finetuned"], responses):
+            if resp.status_code == 200:
+                res_filename = f"{base_name}_{key}{file_ext}"
+                with open(RESTORED_DIR / res_filename, "wb") as f:
+                    f.write(resp.content)
+                results[f"{key}_url"] = f"/restored/{res_filename}"
+            else:
+                results[f"{key}_url"] = None
+
+        return JSONResponse({
+            "success": True,
+            "original_url": f"/uploads/{filename}",
+            "results": results
+        })
+
+    except Exception as e:
+        return JSONResponse({"success": False, "message": str(e)}, status_code=500)
 
 if __name__ == "__main__":
     import uvicorn

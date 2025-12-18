@@ -274,9 +274,16 @@
 
         .results-container {
             display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
-            padding: 20px;
+            grid-template-columns: 1fr 1fr 1fr; /* Geändert von 1fr 1fr */
+            gap: 15px;
+            padding: 10px;
+        }
+
+        /* Optional: Bilder im Resultat etwas kleiner machen, damit sie nebeneinander passen */
+        .result-box img {
+            max-width: 100%;
+            max-height: 200px;
+            object-fit: contain;
         }
 
         .result-box {
@@ -613,8 +620,12 @@
                                 <img id="originalImage" src="" alt="Original">
                             </div>
                             <div class="result-box">
-                                <h3>Restored Image</h3>
-                                <img id="restoredImage" src="" alt="Restored">
+                                <h3>Normal Model</h3>
+                                <img id="restoredNormal" src="" alt="Normal Restoration">
+                            </div>
+                            <div class="result-box">
+                                <h3>Finetuned (Restorer2)</h3>
+                                <img id="restoredFinetuned" src="" alt="Finetuned Restoration">
                             </div>
                         </div>
                         <div class="new-upload-btn">
@@ -645,7 +656,8 @@
         const maskEditor = document.getElementById('maskEditor');
         const message = document.getElementById('message');
         const originalImage = document.getElementById('originalImage');
-        const restoredImage = document.getElementById('restoredImage');
+        const restoredNormal = document.getElementById('restoredNormal');
+        const restoredFinetuned = document.getElementById('restoredFinetuned');
         const previewContainer = document.getElementById('previewContainer');
         const previewImage = document.getElementById('previewImage');
         const uploadContent = document.getElementById('uploadContent');
@@ -958,14 +970,23 @@
 
                 if (data.success) {
                     originalImage.src = data.original_url;
-                    restoredImage.src = data.restored_url;
+
+                    // Setze die Quellen für beide Bilder (falls vorhanden)
+                    if (data.results.normal_url) {
+                        restoredNormal.src = data.results.normal_url;
+                        restoredNormal.onclick = () => openModal(data.results.normal_url);
+                    }
+
+                    if (data.results.finetuned_url) {
+                        restoredFinetuned.src = data.results.finetuned_url;
+                        restoredFinetuned.onclick = () => openModal(data.results.finetuned_url);
+                    }
+
                     loading.classList.remove('active');
                     results.classList.add('active');
-                    showMessage(data.message, 'success');
-                    
-                    // Add click handlers to open images in modal
+                    showMessage("Restoration complete using both models!", 'success');
+
                     originalImage.onclick = () => openModal(data.original_url);
-                    restoredImage.onclick = () => openModal(data.restored_url);
                 } else {
                     showMessage(data.message, 'error');
                     loading.classList.remove('active');
