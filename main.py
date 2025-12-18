@@ -86,8 +86,8 @@ async def process_with_mask(filename: str = Form(...), mask_data: str = Form(...
         with open(upload_path, "rb") as f:
             image_bytes = f.read()
         
-        # Call the cloud inpainting API
-        api_url = "https://lama-restorer-api-210237704517.europe-west4.run.app/inpaint"
+        # Call the inpainting API (configurable via environment variable)
+        api_url = os.getenv("INPAINT_API_URL", "https://lama-restorer-api-210237704517.europe-west4.run.app/inpaint")
         
         # Prepare multipart form data
         files = {

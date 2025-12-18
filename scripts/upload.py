@@ -2,12 +2,12 @@ import os
 import subprocess
 import time
 
-# --- KONFIGURATION (Vom User übernommen & angepasst) ---
-PROJECT_ID = "aicomp-477516"  # Deine Projekt-ID
-REGION = "europe-west4"  # Deine Region
+# --- KONFIGURATION ---
+PROJECT_ID = os.getenv("GCP_PROJECT_ID", "your-project-id")
+REGION = os.getenv("GCP_REGION", "europe-west4")
 
-# Service Account (Bleibt gleich wie in deiner Vorlage)
-SERVICE_ACCOUNT_EMAIL = "vertex-ai-runner@aicomp-477516.iam.gserviceaccount.com"
+# Service Account
+SERVICE_ACCOUNT_EMAIL = os.getenv("GCP_SERVICE_ACCOUNT_EMAIL", f"vertex-ai-runner@{PROJECT_ID}.iam.gserviceaccount.com")
 
 # Container- und Job-Namen
 REPO_NAME = "vertex-ai-repo"  # Repository Name

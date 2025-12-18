@@ -7,13 +7,26 @@ __pycache__/
 restored/
 uploads/
 
-/train_1/*
-/train_1_destructed/*
-/train_1_mask/*
-/test/*
-/test_destructed/*
-/test_mask/*
-aicomp-477516-a9f4b6a5785d.json
+# Local data folders
+/train_1/
+/train_1_destructed/
+/train_1_mask/
+/test/
+/test_destructed/
+/test_mask/
 
-aicomp-477516-a9f4b6a5785d.json
-/big-lama
+# Sensitive files
+*.json
+!pyproject.toml
+!package.json
+
+# Models and large files
+/big-lama/
+/lama/models/
+*.ckpt
+*.pth
+*.h5
+
+# OS specific
+Thumbs.db
+.DS_Store
