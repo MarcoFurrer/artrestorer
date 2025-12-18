@@ -1,7 +1,13 @@
+import os
 from google.cloud import storage
 
-# Pfad zur JSON-Datei, die du ihnen geschickt hast
-client = storage.Client.from_service_account_json('aicomp-477516-a9f4b6a5785d.json')
+# Use environment variable for service account key path
+key_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
+if key_path:
+    client = storage.Client.from_service_account_json(key_path)
+else:
+    client = storage.Client()
+
 bucket = client.get_bucket('artrestorer')
 # Jetzt haben sie Zugriff
 
